@@ -133,6 +133,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private _titleSource: TitleEventSource = TitleEventSource.Process;
 	private _container: HTMLElement | undefined;
 	private _wrapperElement: (HTMLElement & { xterm?: XTermTerminal }) | undefined;
+	private _wrapperParentElement: HTMLElement | undefined;
 	private _xterm: XTermTerminal | undefined;
 	private _xtermCore: XTermCore | undefined;
 	private _xtermTypeAhead: TypeAheadAddon | undefined;
@@ -509,7 +510,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			return;
 		}
 
-		const computedStyle = window.getComputedStyle(this._wrapperElement!);
+		const computedStyle = window.getComputedStyle(this._wrapperParentElement!);
 		const width = parseInt(computedStyle.getPropertyValue('width').replace('px', ''), 10);
 		const height = parseInt(computedStyle.getPropertyValue('height').replace('px', ''), 10);
 		this._evaluateColsAndRows(width, height);
@@ -582,7 +583,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			return undefined;
 		}
 
-		if (!this._wrapperElement) {
+		if (!this._wrapperParentElement) {
 			return undefined;
 		}
 		TerminalInstance._lastKnownCanvasDimensions = new dom.Dimension(width, height - 2 + (this._hasScrollBar && !this._horizontalScrollbar ? -scrollbarHeight : 0)/* bottom padding */);
@@ -733,7 +734,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		this._attachBarrier.open();
 
 		// Attach has not occurred yet
-		if (!this._wrapperElement) {
+		if (!this._wrapperParentElement) {
 			return this._attachToElement(container);
 		}
 
@@ -744,22 +745,24 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 		// The container changed, reattach
 		this._container = container;
-		this._container.appendChild(this._wrapperElement);
+		this._container.appendChild(this._wrapperParentElement);
 		setTimeout(() => this._initDragAndDrop(container));
 	}
 
 	private async _attachToElement(container: HTMLElement): Promise<void> {
-		if (this._wrapperElement) {
+		if (this._wrapperParentElement) {
 			throw new Error('The terminal instance has already been attached to a container');
 		}
 
 		this._container = container;
+		this._wrapperParentElement = document.createElement('div');
 		this._wrapperElement = document.createElement('div');
 		this._wrapperElement.classList.add('terminal-wrapper');
 		this._xtermElement = document.createElement('div');
 		this._wrapperElement.appendChild(this._xtermElement);
 
-		this._container.appendChild(this._wrapperElement);
+		this._wrapperParentElement.appendChild(this._wrapperElement);
+		this._container.appendChild(this._wrapperParentElement);
 
 		const xterm = await this._xtermReadyPromise;
 
@@ -1959,7 +1962,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 	private async _addScrollbar(): Promise<void> {
 		const charWidth = this._configHelper?.getFont(this._xtermCore).charWidth;
-		if (!this._xterm?.element || !this._wrapperElement || !this._container || !charWidth || !this._fixedCols) {
+		if (!this._xterm?.element || !this._wrapperElement || !this._container || !charWidth || !this._fixedCols || !this._wrapperParentElement) {
 			return;
 		}
 		if (this._fixedCols < this._xterm.buffer.active.getLine(0)!.length) {
@@ -1972,9 +1975,9 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		await this._resize();
 		this._terminalHasFixedWidth.set(true);
 		if (!this._horizontalScrollbar) {
-			this._horizontalScrollbar = this._register(new DomScrollableElement(this._wrapperElement, {
+			this._horizontalScrollbar = this._register(new DomScrollableElement(this._wrapperParentElement, {
 				vertical: ScrollbarVisibility.Hidden,
-				horizontal: ScrollbarVisibility.Auto,
+				horizontal: ScrollbarVisibility.Visible,
 				useShadows: false,
 				scrollYToX: false,
 				consumeMouseWheelIfScrollbarIsNeeded: false
