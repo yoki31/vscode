@@ -264,10 +264,15 @@ export class ElectronServiceProcessFactory implements TsServerProcessFactory {
 			tsServerPath = versionManager.currentVersion.tsServerPath;
 		}
 
-		// TODO: use 4.6 instead
+		// TODO: use 4.6+ instead
 		const useIpc = version.apiVersion?.gte(API.v440);
 
-		const childProcess = child_process.fork(tsServerPath, args, {
+		const runtimeArgs = [...args];
+		if (useIpc) {
+			runtimeArgs.push('--useNodeIpc');
+		}
+
+		const childProcess = child_process.fork(tsServerPath, runtimeArgs, {
 			silent: true,
 			cwd: undefined,
 			env: generatePatchedEnv(process.env, tsServerPath),
