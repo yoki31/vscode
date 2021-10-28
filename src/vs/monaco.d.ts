@@ -803,6 +803,10 @@ declare namespace monaco {
 		 */
 		getPosition(): Position;
 		/**
+		 * Get the position at the start of the selection.
+		*/
+		getSelectionStart(): Position;
+		/**
 		 * Create a new selection with a different `selectionStartLineNumber` and `selectionStartColumn`.
 		 */
 		setStartPosition(startLineNumber: number, startColumn: number): Selection;
@@ -810,6 +814,14 @@ declare namespace monaco {
 		 * Create a `Selection` from one or two positions
 		 */
 		static fromPositions(start: IPosition, end?: IPosition): Selection;
+		/**
+		 * Creates a left to right `Selection` from a range.
+		 */
+		static fromRange(range: Range): Selection;
+		/**
+		 * Creates a right to left `Selection` from a range.
+		 */
+		static fromRangeRTL(range: Range): Selection;
 		/**
 		 * Create a `Selection` from an `ISelection`.
 		 */

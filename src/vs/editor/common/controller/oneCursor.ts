@@ -64,9 +64,9 @@ export class Cursor {
 	public readSelectionFromMarkers(context: CursorContext): Selection {
 		const range = context.model._getTrackedRange(this._selTrackedRange!)!;
 		if (this.modelState.selection.getDirection() === SelectionDirection.LTR) {
-			return new Selection(range.startLineNumber, range.startColumn, range.endLineNumber, range.endColumn);
+			return Selection.fromRange(range);
 		}
-		return new Selection(range.endLineNumber, range.endColumn, range.startLineNumber, range.startColumn);
+		return Selection.fromRangeRTL(range);
 	}
 
 	public ensureValidState(context: CursorContext): void {

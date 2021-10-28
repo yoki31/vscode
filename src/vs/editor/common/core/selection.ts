@@ -129,6 +129,13 @@ export class Selection extends Range {
 	}
 
 	/**
+	 * Get the position at the start of the selection.
+	*/
+	public getSelectionStart(): Position {
+		return new Position(this.selectionStartLineNumber, this.selectionStartColumn);
+	}
+
+	/**
 	 * Create a new selection with a different `selectionStartLineNumber` and `selectionStartColumn`.
 	 */
 	public override setStartPosition(startLineNumber: number, startColumn: number): Selection {
@@ -145,6 +152,20 @@ export class Selection extends Range {
 	 */
 	public static override fromPositions(start: IPosition, end: IPosition = start): Selection {
 		return new Selection(start.lineNumber, start.column, end.lineNumber, end.column);
+	}
+
+	/**
+	 * Creates a left to right `Selection` from a range.
+	 */
+	public static fromRange(range: Range): Selection {
+		return new Selection(range.startLineNumber, range.startColumn, range.endLineNumber, range.endColumn);
+	}
+
+	/**
+	 * Creates a right to left `Selection` from a range.
+	 */
+	public static fromRangeRTL(range: Range): Selection {
+		return new Selection(range.endLineNumber, range.endColumn, range.startLineNumber, range.startColumn);
 	}
 
 	/**
