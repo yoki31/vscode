@@ -3,35 +3,35 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { RunOnceScheduler } from 'vs/base/common/async';
-import { CharCode } from 'vs/base/common/charCode';
-import { Codicon } from 'vs/base/common/codicons';
-import { IMarkdownString } from 'vs/base/common/htmlContent';
-import { Disposable, IDisposable } from 'vs/base/common/lifecycle';
-import * as platform from 'vs/base/common/platform';
-import { InvisibleCharacters } from 'vs/base/common/strings';
-import 'vs/css!./unicodeHighlighter';
-import { IActiveCodeEditor, ICodeEditor } from 'vs/editor/browser/editorBrowser';
-import { EditorAction, registerEditorAction, registerEditorContribution, ServicesAccessor } from 'vs/editor/browser/editorExtensions';
-import { InUntrustedWorkspace, inUntrustedWorkspace, EditorOption, InternalUnicodeHighlightOptions, unicodeHighlightConfigKeys } from 'vs/editor/common/config/editorOptions';
-import { Range } from 'vs/editor/common/core/range';
-import { IEditorContribution } from 'vs/editor/common/editorCommon';
-import { IModelDecoration, IModelDeltaDecoration, ITextModel, TrackedRangeStickiness } from 'vs/editor/common/model';
-import { ModelDecorationOptions } from 'vs/editor/common/model/textModel';
-import { UnicodeHighlighterOptions, UnicodeHighlighterReason, UnicodeHighlighterReasonKind, UnicodeTextModelHighlighter } from 'vs/editor/common/services/unicodeTextModelHighlighter';
-import { IEditorWorkerService, IUnicodeHighlightsResult } from 'vs/editor/common/services/editorWorker';
-import { ILanguageService } from 'vs/editor/common/languages/language';
-import { isModelDecorationInComment, isModelDecorationInString, isModelDecorationVisible } from 'vs/editor/common/viewModel/viewModelDecorations';
-import { HoverAnchor, HoverAnchorType, HoverParticipantRegistry, IEditorHoverParticipant, IEditorHoverRenderContext, IHoverPart } from 'vs/editor/contrib/hover/browser/hoverTypes';
-import { MarkdownHover, renderMarkdownHovers } from 'vs/editor/contrib/hover/browser/markdownHoverParticipant';
-import { BannerController } from 'vs/editor/contrib/unicodeHighlighter/browser/bannerController';
-import * as nls from 'vs/nls';
-import { ConfigurationTarget, IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { IOpenerService } from 'vs/platform/opener/common/opener';
-import { IQuickInputService, IQuickPickItem } from 'vs/platform/quickinput/common/quickInput';
-import { registerIcon } from 'vs/platform/theme/common/iconRegistry';
-import { IWorkspaceTrustManagementService } from 'vs/platform/workspace/common/workspaceTrust';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
+import { CharCode } from '../../../../base/common/charCode.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import * as platform from '../../../../base/common/platform.js';
+import { InvisibleCharacters, isBasicASCII } from '../../../../base/common/strings.js';
+import './unicodeHighlighter.css';
+import { IActiveCodeEditor, ICodeEditor } from '../../../browser/editorBrowser.js';
+import { EditorAction, EditorContributionInstantiation, registerEditorAction, registerEditorContribution, ServicesAccessor } from '../../../browser/editorExtensions.js';
+import { InUntrustedWorkspace, inUntrustedWorkspace, EditorOption, InternalUnicodeHighlightOptions, unicodeHighlightConfigKeys } from '../../../common/config/editorOptions.js';
+import { Range } from '../../../common/core/range.js';
+import { IEditorContribution } from '../../../common/editorCommon.js';
+import { IModelDecoration, IModelDeltaDecoration, ITextModel, TrackedRangeStickiness } from '../../../common/model.js';
+import { ModelDecorationOptions } from '../../../common/model/textModel.js';
+import { UnicodeHighlighterOptions, UnicodeHighlighterReason, UnicodeHighlighterReasonKind, UnicodeTextModelHighlighter } from '../../../common/services/unicodeTextModelHighlighter.js';
+import { IEditorWorkerService, IUnicodeHighlightsResult } from '../../../common/services/editorWorker.js';
+import { ILanguageService } from '../../../common/languages/language.js';
+import { isModelDecorationInComment, isModelDecorationInString, isModelDecorationVisible } from '../../../common/viewModel/viewModelDecorations.js';
+import { HoverAnchor, HoverAnchorType, HoverParticipantRegistry, IEditorHoverParticipant, IEditorHoverRenderContext, IHoverPart, IRenderedHoverParts } from '../../hover/browser/hoverTypes.js';
+import { MarkdownHover, renderMarkdownHovers } from '../../hover/browser/markdownHoverParticipant.js';
+import { BannerController } from './bannerController.js';
+import * as nls from '../../../../nls.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
+import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
+import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 
 export const warningIcon = registerIcon('extensions-warning-message', Codicon.warning, nls.localize('warningIcon', 'Icon shown with a warning message in the extensions editor.'));
 
@@ -163,7 +163,7 @@ export class UnicodeHighlighter extends Disposable implements IEditorContributio
 			allowedCodePoints: Object.keys(options.allowedCharacters).map(c => c.codePointAt(0)!),
 			allowedLocales: Object.keys(options.allowedLocales).map(locale => {
 				if (locale === '_os') {
-					let osLocale = new Intl.NumberFormat().resolvedOptions().locale;
+					const osLocale = new Intl.NumberFormat().resolvedOptions().locale;
 					return osLocale;
 				} else if (locale === '_vscode') {
 					return platform.language;
@@ -179,9 +179,9 @@ export class UnicodeHighlighter extends Disposable implements IEditorContributio
 		}
 	}
 
-	public getDecorationInfo(decorationId: string): UnicodeHighlighterDecorationInfo | null {
+	public getDecorationInfo(decoration: IModelDecoration): UnicodeHighlighterDecorationInfo | null {
 		if (this._highlighter) {
-			return this._highlighter.getDecorationInfo(decorationId);
+			return this._highlighter.getDecorationInfo(decoration);
 		}
 		return null;
 	}
@@ -214,7 +214,7 @@ function resolveOptions(trusted: boolean, options: InternalUnicodeHighlightOptio
 class DocumentUnicodeHighlighter extends Disposable {
 	private readonly _model: ITextModel = this._editor.getModel();
 	private readonly _updateSoon: RunOnceScheduler;
-	private _decorationIds = new Set<string>();
+	private _decorations = this._editor.createDecorationsCollection();
 
 	constructor(
 		private readonly _editor: IActiveCodeEditor,
@@ -233,7 +233,7 @@ class DocumentUnicodeHighlighter extends Disposable {
 	}
 
 	public override dispose() {
-		this._decorationIds = new Set(this._model.deltaDecorations(Array.from(this._decorationIds), []));
+		this._decorations.clear();
 		super.dispose();
 	}
 
@@ -243,7 +243,7 @@ class DocumentUnicodeHighlighter extends Disposable {
 		}
 
 		if (!this._model.mightContainNonBasicASCII()) {
-			this._decorationIds = new Set(this._editor.deltaDecorations(Array.from(this._decorationIds), []));
+			this._decorations.clear();
 			return;
 		}
 
@@ -271,31 +271,21 @@ class DocumentUnicodeHighlighter extends Disposable {
 						});
 					}
 				}
-				this._decorationIds = new Set(this._editor.deltaDecorations(
-					Array.from(this._decorationIds),
-					decorations
-				));
+				this._decorations.set(decorations);
 			});
 	}
 
-	public getDecorationInfo(decorationId: string): UnicodeHighlighterDecorationInfo | null {
-		if (!this._decorationIds.has(decorationId)) {
+	public getDecorationInfo(decoration: IModelDecoration): UnicodeHighlighterDecorationInfo | null {
+		if (!this._decorations.has(decoration)) {
 			return null;
 		}
 		const model = this._editor.getModel();
-		const range = model.getDecorationRange(decorationId)!;
-		const decoration = {
-			range: range,
-			options: Decorations.instance.getDecorationFromOptions(this._options),
-			id: decorationId,
-			ownerId: 0,
-		};
 		if (
 			!isModelDecorationVisible(model, decoration)
 		) {
 			return null;
 		}
-		const text = model.getValueInRange(range);
+		const text = model.getValueInRange(decoration.range);
 		return {
 			reason: computeReason(text, this._options)!,
 			inComment: isModelDecorationInComment(model, decoration),
@@ -308,7 +298,7 @@ class ViewportUnicodeHighlighter extends Disposable {
 
 	private readonly _model: ITextModel = this._editor.getModel();
 	private readonly _updateSoon: RunOnceScheduler;
-	private _decorationIds = new Set<string>();
+	private readonly _decorations = this._editor.createDecorationsCollection();
 
 	constructor(
 		private readonly _editor: IActiveCodeEditor,
@@ -336,7 +326,7 @@ class ViewportUnicodeHighlighter extends Disposable {
 	}
 
 	public override dispose() {
-		this._decorationIds = new Set(this._model.deltaDecorations(Array.from(this._decorationIds), []));
+		this._decorations.clear();
 		super.dispose();
 	}
 
@@ -346,7 +336,7 @@ class ViewportUnicodeHighlighter extends Disposable {
 		}
 
 		if (!this._model.mightContainNonBasicASCII()) {
-			this._decorationIds = new Set(this._editor.deltaDecorations(Array.from(this._decorationIds), []));
+			this._decorations.clear();
 			return;
 		}
 
@@ -379,22 +369,15 @@ class ViewportUnicodeHighlighter extends Disposable {
 		}
 		this._updateState(totalResult);
 
-		this._decorationIds = new Set(this._editor.deltaDecorations(Array.from(this._decorationIds), decorations));
+		this._decorations.set(decorations);
 	}
 
-	public getDecorationInfo(decorationId: string): UnicodeHighlighterDecorationInfo | null {
-		if (!this._decorationIds.has(decorationId)) {
+	public getDecorationInfo(decoration: IModelDecoration): UnicodeHighlighterDecorationInfo | null {
+		if (!this._decorations.has(decoration)) {
 			return null;
 		}
 		const model = this._editor.getModel();
-		const range = model.getDecorationRange(decorationId)!;
-		const text = model.getValueInRange(range);
-		const decoration = {
-			range: range,
-			options: Decorations.instance.getDecorationFromOptions(this._options),
-			id: decorationId,
-			ownerId: 0,
-		};
+		const text = model.getValueInRange(decoration.range);
 		if (!isModelDecorationVisible(model, decoration)) {
 			return null;
 		}
@@ -422,9 +405,11 @@ export class UnicodeHighlighterHover implements IHoverPart {
 	}
 }
 
+const configureUnicodeHighlightOptionsStr = nls.localize('unicodeHighlight.configureUnicodeHighlightOptions', 'Configure Unicode Highlight Options');
+
 export class UnicodeHighlighterHoverParticipant implements IEditorHoverParticipant<MarkdownHover> {
 
-	public readonly hoverOrdinal: number = 4;
+	public readonly hoverOrdinal: number = 5;
 
 	constructor(
 		private readonly _editor: ICodeEditor,
@@ -446,10 +431,11 @@ export class UnicodeHighlighterHoverParticipant implements IEditorHoverParticipa
 		}
 
 		const result: MarkdownHover[] = [];
+		const existedReason = new Set<string>();
 		let index = 300;
 		for (const d of lineDecorations) {
 
-			const highlightInfo = unicodeHighlighter.getDecorationInfo(d.id);
+			const highlightInfo = unicodeHighlighter.getDecorationInfo(d);
 			if (!highlightInfo) {
 				continue;
 			}
@@ -461,14 +447,24 @@ export class UnicodeHighlighterHoverParticipant implements IEditorHoverParticipa
 
 			let reason: string;
 			switch (highlightInfo.reason.kind) {
-				case UnicodeHighlighterReasonKind.Ambiguous:
-					reason = nls.localize(
-						'unicodeHighlight.characterIsAmbiguous',
-						'The character {0} could be confused with the character {1}, which is more common in source code.',
-						codePointStr,
-						formatCodePointMarkdown(highlightInfo.reason.confusableWith.codePointAt(0)!)
-					);
+				case UnicodeHighlighterReasonKind.Ambiguous: {
+					if (isBasicASCII(highlightInfo.reason.confusableWith)) {
+						reason = nls.localize(
+							'unicodeHighlight.characterIsAmbiguousASCII',
+							'The character {0} could be confused with the ASCII character {1}, which is more common in source code.',
+							codePointStr,
+							formatCodePointMarkdown(highlightInfo.reason.confusableWith.codePointAt(0)!)
+						);
+					} else {
+						reason = nls.localize(
+							'unicodeHighlight.characterIsAmbiguous',
+							'The character {0} could be confused with the character {1}, which is more common in source code.',
+							codePointStr,
+							formatCodePointMarkdown(highlightInfo.reason.confusableWith.codePointAt(0)!)
+						);
+					}
 					break;
+				}
 
 				case UnicodeHighlighterReasonKind.Invisible:
 					reason = nls.localize(
@@ -487,6 +483,11 @@ export class UnicodeHighlighterHoverParticipant implements IEditorHoverParticipa
 					break;
 			}
 
+			if (existedReason.has(reason)) {
+				continue;
+			}
+			existedReason.add(reason);
+
 			const adjustSettingsArgs: ShowExcludeOptionsArgs = {
 				codePoint: codePoint,
 				reason: highlightInfo.reason,
@@ -495,18 +496,22 @@ export class UnicodeHighlighterHoverParticipant implements IEditorHoverParticipa
 			};
 
 			const adjustSettings = nls.localize('unicodeHighlight.adjustSettings', 'Adjust settings');
-			const contents: Array<IMarkdownString> = [{
-				value: `${reason} [${adjustSettings}](command:${ShowExcludeOptions.ID}?${encodeURIComponent(JSON.stringify(adjustSettingsArgs))})`,
-				isTrusted: true,
-			}];
-
-			result.push(new MarkdownHover(this, d.range, contents, index++));
+			const uri = `command:${ShowExcludeOptions.ID}?${encodeURIComponent(JSON.stringify(adjustSettingsArgs))}`;
+			const markdown = new MarkdownString('', true)
+				.appendMarkdown(reason)
+				.appendText(' ')
+				.appendLink(uri, adjustSettings, configureUnicodeHighlightOptionsStr);
+			result.push(new MarkdownHover(this, d.range, [markdown], false, index++));
 		}
 		return result;
 	}
 
-	public renderHoverParts(context: IEditorHoverRenderContext, hoverParts: MarkdownHover[]): IDisposable {
+	public renderHoverParts(context: IEditorHoverRenderContext, hoverParts: MarkdownHover[]): IRenderedHoverParts<MarkdownHover> {
 		return renderMarkdownHovers(context, hoverParts, this._editor, this._languageService, this._openerService);
+	}
+
+	public getAccessibleContent(hoverPart: MarkdownHover): string {
+		return hoverPart.contents.map(c => c.value).join('\n');
 	}
 }
 
@@ -573,14 +578,13 @@ export class DisableHighlightingInCommentsAction extends EditorAction implements
 	constructor() {
 		super({
 			id: DisableHighlightingOfAmbiguousCharactersAction.ID,
-			label: nls.localize('action.unicodeHighlight.disableHighlightingInComments', 'Disable highlighting of characters in comments'),
-			alias: 'Disable highlighting of characters in comments',
+			label: nls.localize2('action.unicodeHighlight.disableHighlightingInComments', "Disable highlighting of characters in comments"),
 			precondition: undefined
 		});
 	}
 
 	public async run(accessor: ServicesAccessor | undefined, editor: ICodeEditor, args: any): Promise<void> {
-		let configurationService = accessor?.get(IConfigurationService);
+		const configurationService = accessor?.get(IConfigurationService);
 		if (configurationService) {
 			this.runAction(configurationService);
 		}
@@ -597,14 +601,13 @@ export class DisableHighlightingInStringsAction extends EditorAction implements 
 	constructor() {
 		super({
 			id: DisableHighlightingOfAmbiguousCharactersAction.ID,
-			label: nls.localize('action.unicodeHighlight.disableHighlightingInStrings', 'Disable highlighting of characters in strings'),
-			alias: 'Disable highlighting of characters in strings',
+			label: nls.localize2('action.unicodeHighlight.disableHighlightingInStrings', "Disable highlighting of characters in strings"),
 			precondition: undefined
 		});
 	}
 
 	public async run(accessor: ServicesAccessor | undefined, editor: ICodeEditor, args: any): Promise<void> {
-		let configurationService = accessor?.get(IConfigurationService);
+		const configurationService = accessor?.get(IConfigurationService);
 		if (configurationService) {
 			this.runAction(configurationService);
 		}
@@ -621,14 +624,13 @@ export class DisableHighlightingOfAmbiguousCharactersAction extends EditorAction
 	constructor() {
 		super({
 			id: DisableHighlightingOfAmbiguousCharactersAction.ID,
-			label: nls.localize('action.unicodeHighlight.disableHighlightingOfAmbiguousCharacters', 'Disable highlighting of ambiguous characters'),
-			alias: 'Disable highlighting of ambiguous characters',
+			label: nls.localize2('action.unicodeHighlight.disableHighlightingOfAmbiguousCharacters', "Disable highlighting of ambiguous characters"),
 			precondition: undefined
 		});
 	}
 
 	public async run(accessor: ServicesAccessor | undefined, editor: ICodeEditor, args: any): Promise<void> {
-		let configurationService = accessor?.get(IConfigurationService);
+		const configurationService = accessor?.get(IConfigurationService);
 		if (configurationService) {
 			this.runAction(configurationService);
 		}
@@ -645,14 +647,13 @@ export class DisableHighlightingOfInvisibleCharactersAction extends EditorAction
 	constructor() {
 		super({
 			id: DisableHighlightingOfInvisibleCharactersAction.ID,
-			label: nls.localize('action.unicodeHighlight.disableHighlightingOfInvisibleCharacters', 'Disable highlighting of invisible characters'),
-			alias: 'Disable highlighting of invisible characters',
+			label: nls.localize2('action.unicodeHighlight.disableHighlightingOfInvisibleCharacters', "Disable highlighting of invisible characters"),
 			precondition: undefined
 		});
 	}
 
 	public async run(accessor: ServicesAccessor | undefined, editor: ICodeEditor, args: any): Promise<void> {
-		let configurationService = accessor?.get(IConfigurationService);
+		const configurationService = accessor?.get(IConfigurationService);
 		if (configurationService) {
 			this.runAction(configurationService);
 		}
@@ -669,14 +670,13 @@ export class DisableHighlightingOfNonBasicAsciiCharactersAction extends EditorAc
 	constructor() {
 		super({
 			id: DisableHighlightingOfNonBasicAsciiCharactersAction.ID,
-			label: nls.localize('action.unicodeHighlight.disableHighlightingOfNonBasicAsciiCharacters', 'Disable highlighting of non basic ASCII characters'),
-			alias: 'Disable highlighting of non basic ASCII characters',
+			label: nls.localize2('action.unicodeHighlight.disableHighlightingOfNonBasicAsciiCharacters', "Disable highlighting of non basic ASCII characters"),
 			precondition: undefined
 		});
 	}
 
 	public async run(accessor: ServicesAccessor | undefined, editor: ICodeEditor, args: any): Promise<void> {
-		let configurationService = accessor?.get(IConfigurationService);
+		const configurationService = accessor?.get(IConfigurationService);
 		if (configurationService) {
 			this.runAction(configurationService);
 		}
@@ -699,8 +699,7 @@ export class ShowExcludeOptions extends EditorAction {
 	constructor() {
 		super({
 			id: ShowExcludeOptions.ID,
-			label: nls.localize('action.unicodeHighlight.showExcludeOptions', "Show Exclude Options"),
-			alias: 'Show Exclude Options',
+			label: nls.localize2('action.unicodeHighlight.showExcludeOptions', "Show Exclude Options"),
 			precondition: undefined
 		});
 	}
@@ -768,7 +767,7 @@ export class ShowExcludeOptions extends EditorAction {
 
 		const result = await quickPickService.pick(
 			options,
-			{ title: nls.localize('unicodeHighlight.configureUnicodeHighlightOptions', 'Configure Unicode Highlight Options') }
+			{ title: configureUnicodeHighlightOptionsStr }
 		);
 
 		if (result) {
@@ -820,5 +819,5 @@ registerEditorAction(DisableHighlightingOfAmbiguousCharactersAction);
 registerEditorAction(DisableHighlightingOfInvisibleCharactersAction);
 registerEditorAction(DisableHighlightingOfNonBasicAsciiCharactersAction);
 registerEditorAction(ShowExcludeOptions);
-registerEditorContribution(UnicodeHighlighter.ID, UnicodeHighlighter);
+registerEditorContribution(UnicodeHighlighter.ID, UnicodeHighlighter, EditorContributionInstantiation.AfterFirstRender);
 HoverParticipantRegistry.register(UnicodeHighlighterHoverParticipant);

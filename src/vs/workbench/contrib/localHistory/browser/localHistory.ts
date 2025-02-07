@@ -3,13 +3,30 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize } from 'vs/nls';
-import { Codicon } from 'vs/base/common/codicons';
-import { language } from 'vs/base/common/platform';
-import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
-import { registerIcon } from 'vs/platform/theme/common/iconRegistry';
+import { localize } from '../../../../nls.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { language } from '../../../../base/common/platform.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
+import { safeIntl } from '../../../../base/common/date.js';
 
-export const LOCAL_HISTORY_DATE_FORMATTER = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' });
+interface ILocalHistoryDateFormatter {
+	format: (timestamp: number) => string;
+}
+
+let localHistoryDateFormatter: ILocalHistoryDateFormatter | undefined = undefined;
+
+export function getLocalHistoryDateFormatter(): ILocalHistoryDateFormatter {
+	if (!localHistoryDateFormatter) {
+		const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' };
+		const formatter = safeIntl.DateTimeFormat(language, options);
+		localHistoryDateFormatter = {
+			format: date => formatter.format(date)
+		};
+	}
+
+	return localHistoryDateFormatter;
+}
 
 export const LOCAL_HISTORY_MENU_CONTEXT_VALUE = 'localHistory:item';
 export const LOCAL_HISTORY_MENU_CONTEXT_KEY = ContextKeyExpr.equals('timelineItem', LOCAL_HISTORY_MENU_CONTEXT_VALUE);

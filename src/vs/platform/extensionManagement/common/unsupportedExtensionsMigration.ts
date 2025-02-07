@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from 'vs/base/common/cancellation';
-import { IExtensionGalleryService, IExtensionManagementService, IGlobalExtensionEnablementService, InstallOperation } from 'vs/platform/extensionManagement/common/extensionManagement';
-import { areSameExtensions, getExtensionId } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
-import { IExtensionStorageService } from 'vs/platform/extensionManagement/common/extensionStorage';
-import { ExtensionType } from 'vs/platform/extensions/common/extensions';
-import { ILogService } from 'vs/platform/log/common/log';
+import { CancellationToken } from '../../../base/common/cancellation.js';
+import { IExtensionGalleryService, IExtensionManagementService, IGlobalExtensionEnablementService, InstallOperation } from './extensionManagement.js';
+import { areSameExtensions, getExtensionId } from './extensionManagementUtil.js';
+import { IExtensionStorageService } from './extensionStorage.js';
+import { ExtensionType } from '../../extensions/common/extensions.js';
+import { ILogService } from '../../log/common/log.js';
 
 /**
  * Migrates the installed unsupported nightly extension to a supported pre-release extension. It includes following:
@@ -20,18 +20,25 @@ import { ILogService } from 'vs/platform/log/common/log';
 export async function migrateUnsupportedExtensions(extensionManagementService: IExtensionManagementService, galleryService: IExtensionGalleryService, extensionStorageService: IExtensionStorageService, extensionEnablementService: IGlobalExtensionEnablementService, logService: ILogService): Promise<void> {
 	try {
 		const extensionsControlManifest = await extensionManagementService.getExtensionsControlManifest();
-		if (!extensionsControlManifest.unsupportedPreReleaseExtensions) {
+		if (!extensionsControlManifest.deprecated) {
 			return;
 		}
 		const installed = await extensionManagementService.getInstalled(ExtensionType.User);
-		for (const [unsupportedExtensionId, { id: preReleaseExtensionId, migrateStorage }] of Object.entries(extensionsControlManifest.unsupportedPreReleaseExtensions)) {
+		for (const [unsupportedExtensionId, deprecated] of Object.entries(extensionsControlManifest.deprecated)) {
+			if (!deprecated?.extension) {
+				continue;
+			}
+			const { id: preReleaseExtensionId, autoMigrate, preRelease } = deprecated.extension;
+			if (!autoMigrate) {
+				continue;
+			}
 			const unsupportedExtension = installed.find(i => areSameExtensions(i.identifier, { id: unsupportedExtensionId }));
 			// Unsupported Extension is not installed
 			if (!unsupportedExtension) {
 				continue;
 			}
 
-			const gallery = (await galleryService.getExtensions([{ id: preReleaseExtensionId, preRelease: true }], { targetPlatform: await extensionManagementService.getTargetPlatform(), compatible: true }, CancellationToken.None))[0];
+			const gallery = (await galleryService.getExtensions([{ id: preReleaseExtensionId, preRelease }], { targetPlatform: await extensionManagementService.getTargetPlatform(), compatible: true }, CancellationToken.None))[0];
 			if (!gallery) {
 				logService.info(`Skipping migrating '${unsupportedExtension.identifier.id}' extension because, the comaptible target '${preReleaseExtensionId}' extension is not found`);
 				continue;
@@ -52,7 +59,7 @@ export async function migrateUnsupportedExtensions(extensionManagementService: I
 						await extensionEnablementService.disableExtension(preReleaseExtension.identifier);
 						logService.info(`Disabled the pre-release extension '${preReleaseExtension.identifier.id}' because the unsupported extension '${unsupportedExtension.identifier.id}' is disabled`);
 					}
-					if (migrateStorage) {
+					if (autoMigrate.storage) {
 						extensionStorageService.addToMigrationList(getExtensionId(unsupportedExtension.manifest.publisher, unsupportedExtension.manifest.name), getExtensionId(preReleaseExtension.manifest.publisher, preReleaseExtension.manifest.name));
 						logService.info(`Added pre-release extension to the storage migration list`);
 					}

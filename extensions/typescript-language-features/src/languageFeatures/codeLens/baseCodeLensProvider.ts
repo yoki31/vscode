@@ -4,12 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import * as nls from 'vscode-nls';
-import type * as Proto from '../../protocol';
 import { CachedResponse } from '../../tsServer/cachedResponse';
+import type * as Proto from '../../tsServer/protocol/protocol';
+import * as typeConverters from '../../typeConverters';
 import { ITypeScriptServiceClient } from '../../typescriptService';
+import { escapeRegExp } from '../../utils/regexp';
+import { Disposable } from '../../utils/dispose';
 
-const localize = nls.loadMessageBundle();
 
 export class ReferencesCodeLens extends vscode.CodeLens {
 	constructor(
@@ -21,7 +22,9 @@ export class ReferencesCodeLens extends vscode.CodeLens {
 	}
 }
 
-export abstract class TypeScriptBaseCodeLensProvider implements vscode.CodeLensProvider<ReferencesCodeLens> {
+export abstract class TypeScriptBaseCodeLensProvider extends Disposable implements vscode.CodeLensProvider<ReferencesCodeLens> {
+	protected changeEmitter = this._register(new vscode.EventEmitter<void>());
+	public onDidChangeCodeLenses = this.changeEmitter.event;
 
 	public static readonly cancelledCommand: vscode.Command = {
 		// Cancellation is not an error. Just show nothing until we can properly re-compute the code lens
@@ -30,18 +33,19 @@ export abstract class TypeScriptBaseCodeLensProvider implements vscode.CodeLensP
 	};
 
 	public static readonly errorCommand: vscode.Command = {
-		title: localize('referenceErrorLabel', 'Could not determine references'),
+		title: vscode.l10n.t("Could not determine references"),
 		command: ''
 	};
 
 	public constructor(
 		protected client: ITypeScriptServiceClient,
-		private cachedResponse: CachedResponse<Proto.NavTreeResponse>
-	) { }
-
+		private readonly cachedResponse: CachedResponse<Proto.NavTreeResponse>
+	) {
+		super();
+	}
 
 	async provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): Promise<ReferencesCodeLens[]> {
-		const filepath = this.client.toOpenedFilePath(document);
+		const filepath = this.client.toOpenTsFilePath(document);
 		if (!filepath) {
 			return [];
 		}
@@ -57,6 +61,7 @@ export abstract class TypeScriptBaseCodeLensProvider implements vscode.CodeLensP
 	}
 
 	protected abstract extractSymbol(
+		document: vscode.TextDocument,
 		item: Proto.NavigationTree,
 		parent: Proto.NavigationTree | undefined
 	): vscode.Range | undefined;
@@ -67,11 +72,37 @@ export abstract class TypeScriptBaseCodeLensProvider implements vscode.CodeLensP
 		parent: Proto.NavigationTree | undefined,
 		results: vscode.Range[]
 	): void {
-		const range = this.extractSymbol(item, parent);
+		const range = this.extractSymbol(document, item, parent);
 		if (range) {
 			results.push(range);
 		}
 
 		item.childItems?.forEach(child => this.walkNavTree(document, child, item, results));
 	}
+}
+
+export function getSymbolRange(
+	document: vscode.TextDocument,
+	item: Proto.NavigationTree
+): vscode.Range | undefined {
+	if (item.nameSpan) {
+		return typeConverters.Range.fromTextSpan(item.nameSpan);
+	}
+
+	// In older versions, we have to calculate this manually. See #23924
+	const span = item.spans?.[0];
+	if (!span) {
+		return undefined;
+	}
+
+	const range = typeConverters.Range.fromTextSpan(span);
+	const text = document.getText(range);
+
+	const identifierMatch = new RegExp(`^(.*?(\\b|\\W))${escapeRegExp(item.text || '')}(\\b|\\W)`, 'gm');
+	const match = identifierMatch.exec(text);
+	const prefixLength = match ? match.index + match[1].length : 0;
+	const startOffset = document.offsetAt(new vscode.Position(range.start.line, range.start.character)) + prefixLength;
+	return new vscode.Range(
+		document.positionAt(startOffset),
+		document.positionAt(startOffset + item.text.length));
 }

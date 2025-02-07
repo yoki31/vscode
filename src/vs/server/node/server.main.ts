@@ -6,28 +6,29 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as net from 'net';
-import { FileAccess } from 'vs/base/common/network';
-import { run as runCli } from 'vs/server/node/remoteExtensionHostAgentCli';
-import { createServer as doCreateServer, IServerAPI } from 'vs/server/node/remoteExtensionHostAgentServer';
-import { parseArgs, ErrorReporter } from 'vs/platform/environment/node/argv';
-import { join, dirname } from 'vs/base/common/path';
+import { FileAccess } from '../../base/common/network.js';
+import { run as runCli } from './remoteExtensionHostAgentCli.js';
+import { createServer as doCreateServer, IServerAPI } from './remoteExtensionHostAgentServer.js';
+import { parseArgs, ErrorReporter } from '../../platform/environment/node/argv.js';
+import { join, dirname } from '../../base/common/path.js';
 import { performance } from 'perf_hooks';
-import { serverOptions } from 'vs/server/node/serverEnvironmentService';
-import product from 'vs/platform/product/common/product';
-import * as perf from 'vs/base/common/performance';
+import { serverOptions } from './serverEnvironmentService.js';
+import product from '../../platform/product/common/product.js';
+import * as perf from '../../base/common/performance.js';
 
 perf.mark('code/server/codeLoaded');
 (<any>global).vscodeServerCodeLoadedTime = performance.now();
 
 const errorReporter: ErrorReporter = {
 	onMultipleValues: (id: string, usedValue: string) => {
-		console.error(`Option ${id} can only be defined once. Using value ${usedValue}.`);
+		console.error(`Option '${id}' can only be defined once. Using value ${usedValue}.`);
 	},
-
+	onEmptyValue: (id) => {
+		console.error(`Ignoring option '${id}': Value must not be empty.`);
+	},
 	onUnknownOption: (id: string) => {
-		console.error(`Ignoring option ${id}: not supported for server.`);
+		console.error(`Ignoring option '${id}': not supported for server.`);
 	},
-
 	onDeprecatedOption: (deprecatedOption: string, message) => {
 		console.warn(`Option '${deprecatedOption}' is deprecated: ${message}`);
 	}
@@ -42,7 +43,7 @@ const GLOBAL_STORAGE_HOME = join(APP_SETTINGS_HOME, 'globalStorage');
 const LOCAL_HISTORY_HOME = join(APP_SETTINGS_HOME, 'History');
 const MACHINE_SETTINGS_HOME = join(USER_DATA_PATH, 'Machine');
 args['user-data-dir'] = USER_DATA_PATH;
-const APP_ROOT = dirname(FileAccess.asFileUri('', require).fsPath);
+const APP_ROOT = dirname(FileAccess.asFileUri('').fsPath);
 const BUILTIN_EXTENSIONS_FOLDER_PATH = join(APP_ROOT, 'extensions');
 args['builtin-extensions-dir'] = BUILTIN_EXTENSIONS_FOLDER_PATH;
 args['extensions-dir'] = args['extensions-dir'] || join(REMOTE_DATA_FOLDER, 'extensions');

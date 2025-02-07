@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { VSBuffer } from 'vs/base/common/buffer';
-import type { CancellationToken } from 'vs/base/common/cancellation';
+import type { VSBuffer } from '../../../../base/common/buffer.js';
+import type { CancellationToken } from '../../../../base/common/cancellation.js';
 
 export interface IRPCProtocol {
 	/**
@@ -26,6 +26,8 @@ export interface IRPCProtocol {
 	 * Wait for the write buffer (if applicable) to become empty.
 	 */
 	drain(): Promise<void>;
+
+	dispose(): void;
 }
 
 export class ProxyIdentifier<T> {
