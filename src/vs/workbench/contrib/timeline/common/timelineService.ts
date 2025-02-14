@@ -3,15 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationTokenSource } from 'vs/base/common/cancellation';
-import { Event, Emitter } from 'vs/base/common/event';
-import { IDisposable } from 'vs/base/common/lifecycle';
-import { URI } from 'vs/base/common/uri';
-import { ILogService } from 'vs/platform/log/common/log';
-import { ITimelineService, TimelineChangeEvent, TimelineOptions, TimelineProvidersChangeEvent, TimelineProvider, InternalTimelineOptions, TimelinePaneId } from './timeline';
-import { IViewsService } from 'vs/workbench/common/views';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IContextKey, IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { Event, Emitter } from '../../../../base/common/event.js';
+import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { ITimelineService, TimelineChangeEvent, TimelineOptions, TimelineProvidersChangeEvent, TimelineProvider, TimelinePaneId } from './timeline.js';
+import { IViewsService } from '../../../services/views/common/viewsService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 
 export const TimelineHasProviderContext = new RawContextKey<boolean>('timelineHasProvider', false);
 
@@ -44,8 +44,8 @@ export class TimelineService implements ITimelineService {
 		return [...this.providers.values()].map(p => ({ id: p.id, label: p.label }));
 	}
 
-	getTimeline(id: string, uri: URI, options: TimelineOptions, tokenSource: CancellationTokenSource, internalOptions?: InternalTimelineOptions) {
-		this.logService.trace(`TimelineService#getTimeline(${id}): uri=${uri.toString(true)}`);
+	getTimeline(id: string, uri: URI, options: TimelineOptions, tokenSource: CancellationTokenSource) {
+		this.logService.trace(`TimelineService#getTimeline(${id}): uri=${uri.toString()}`);
 
 		const provider = this.providers.get(id);
 		if (provider === undefined) {
@@ -61,7 +61,7 @@ export class TimelineService implements ITimelineService {
 		}
 
 		return {
-			result: provider.provideTimeline(uri, options, tokenSource.token, internalOptions)
+			result: provider.provideTimeline(uri, options, tokenSource.token)
 				.then(result => {
 					if (result === undefined) {
 						return undefined;

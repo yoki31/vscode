@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as arrays from 'vs/base/common/arrays';
-import * as types from 'vs/base/common/types';
-import * as nls from 'vs/nls';
-import { IAction } from 'vs/base/common/actions';
+import * as arrays from './arrays.js';
+import * as types from './types.js';
+import * as nls from '../../nls.js';
+import { IAction } from './actions.js';
 
 function exceptionToErrorMessage(exception: any, verbose: boolean): string {
 	if (verbose && (exception.stack || exception.stacktrace)) {
@@ -25,6 +25,11 @@ function stackToString(stack: string[] | string | undefined): string | undefined
 }
 
 function detectSystemErrorMessage(exception: any): string {
+
+	// Custom node.js error from us
+	if (exception.code === 'ERR_UNC_HOST_NOT_ALLOWED') {
+		return `${exception.message}. Please update the 'security.allowedUNCHosts' setting if you want to allow this host.`;
+	}
 
 	// See https://nodejs.org/api/errors.html#errors_class_system_error
 	if (typeof exception.code === 'string' && typeof exception.errno === 'number' && typeof exception.syscall === 'string') {
@@ -84,12 +89,8 @@ export function toErrorMessage(error: any = null, verbose: boolean = false): str
 }
 
 
-export interface IErrorOptions {
-	actions?: readonly IAction[];
-}
-
-export interface IErrorWithActions {
-	actions?: readonly IAction[];
+export interface IErrorWithActions extends Error {
+	actions: IAction[];
 }
 
 export function isErrorWithActions(obj: unknown): obj is IErrorWithActions {
@@ -98,12 +99,15 @@ export function isErrorWithActions(obj: unknown): obj is IErrorWithActions {
 	return candidate instanceof Error && Array.isArray(candidate.actions);
 }
 
-export function createErrorWithActions(message: string, options: IErrorOptions = Object.create(null)): Error & IErrorWithActions {
-	const result = new Error(message);
-
-	if (options.actions) {
-		(result as IErrorWithActions).actions = options.actions;
+export function createErrorWithActions(messageOrError: string | Error, actions: IAction[]): IErrorWithActions {
+	let error: IErrorWithActions;
+	if (typeof messageOrError === 'string') {
+		error = new Error(messageOrError) as IErrorWithActions;
+	} else {
+		error = messageOrError as IErrorWithActions;
 	}
 
-	return result;
+	error.actions = actions;
+
+	return error;
 }

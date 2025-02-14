@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IRelativePattern, match as matchGlobPattern } from 'vs/base/common/glob';
-import { URI } from 'vs/base/common/uri';
-import { normalize } from 'vs/base/common/path';
+import { IRelativePattern, match as matchGlobPattern } from '../../base/common/glob.js';
+import { URI } from '../../base/common/uri.js';
+import { normalize } from '../../base/common/path.js';
 
 export interface LanguageFilter {
 	readonly language?: string;
@@ -17,17 +17,22 @@ export interface LanguageFilter {
 	 */
 	readonly hasAccessToAllModels?: boolean;
 	readonly exclusive?: boolean;
+
+	/**
+	 * This provider comes from a builtin extension.
+	 */
+	readonly isBuiltin?: boolean;
 }
 
 export type LanguageSelector = string | LanguageFilter | ReadonlyArray<string | LanguageFilter>;
 
-export function score(selector: LanguageSelector | undefined, candidateUri: URI, candidateLanguage: string, candidateIsSynchronized: boolean, candidateNotebookType: string | undefined): number {
+export function score(selector: LanguageSelector | undefined, candidateUri: URI, candidateLanguage: string, candidateIsSynchronized: boolean, candidateNotebookUri: URI | undefined, candidateNotebookType: string | undefined): number {
 
 	if (Array.isArray(selector)) {
 		// array -> take max individual value
 		let ret = 0;
 		for (const filter of selector) {
-			const value = score(filter, candidateUri, candidateLanguage, candidateIsSynchronized, candidateNotebookType);
+			const value = score(filter, candidateUri, candidateLanguage, candidateIsSynchronized, candidateNotebookUri, candidateNotebookType);
 			if (value === 10) {
 				return value; // already at the highest
 			}
@@ -62,6 +67,12 @@ export function score(selector: LanguageSelector | undefined, candidateUri: URI,
 			return 0;
 		}
 
+		// selector targets a notebook -> use the notebook uri instead
+		// of the "normal" document uri.
+		if (notebookType && candidateNotebookUri) {
+			candidateUri = candidateNotebookUri;
+		}
+
 		let ret = 0;
 
 		if (scheme) {
@@ -87,7 +98,7 @@ export function score(selector: LanguageSelector | undefined, candidateUri: URI,
 		if (notebookType) {
 			if (notebookType === candidateNotebookType) {
 				ret = 10;
-			} else if (notebookType === '*') {
+			} else if (notebookType === '*' && candidateNotebookType !== undefined) {
 				ret = Math.max(ret, 5);
 			} else {
 				return 0;
@@ -118,5 +129,16 @@ export function score(selector: LanguageSelector | undefined, candidateUri: URI,
 
 	} else {
 		return 0;
+	}
+}
+
+
+export function targetsNotebooks(selector: LanguageSelector): boolean {
+	if (typeof selector === 'string') {
+		return false;
+	} else if (Array.isArray(selector)) {
+		return selector.some(targetsNotebooks);
+	} else {
+		return !!(<LanguageFilter>selector).notebookType;
 	}
 }

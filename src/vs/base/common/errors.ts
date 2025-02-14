@@ -23,6 +23,10 @@ export class ErrorHandler {
 		this.unexpectedErrorHandler = function (e: any) {
 			setTimeout(() => {
 				if (e.stack) {
+					if (ErrorNoTelemetry.isErrorNoTelemetry(e)) {
+						throw new ErrorNoTelemetry(e.message + '\n\n' + e.stack);
+					}
+
 					throw new Error(e.message + '\n\n' + e.stack);
 				}
 
@@ -70,8 +74,34 @@ export class ErrorHandler {
 
 export const errorHandler = new ErrorHandler();
 
+/** @skipMangle */
 export function setUnexpectedErrorHandler(newUnexpectedErrorHandler: (e: any) => void): void {
 	errorHandler.setUnexpectedErrorHandler(newUnexpectedErrorHandler);
+}
+
+/**
+ * Returns if the error is a SIGPIPE error. SIGPIPE errors should generally be
+ * logged at most once, to avoid a loop.
+ *
+ * @see https://github.com/microsoft/vscode-remote-release/issues/6481
+ */
+export function isSigPipeError(e: unknown): e is Error {
+	if (!e || typeof e !== 'object') {
+		return false;
+	}
+
+	const cast = e as Record<string, string | undefined>;
+	return cast.code === 'EPIPE' && cast.syscall?.toUpperCase() === 'WRITE';
+}
+
+/**
+ * This function should only be called with errors that indicate a bug in the product.
+ * E.g. buggy extensions/invalid user-input/network issues should not be able to trigger this code path.
+ * If they are, this indicates there is also a bug in the product.
+*/
+export function onBugIndicatingError(e: any): undefined {
+	errorHandler.onUnexpectedError(e);
+	return undefined;
 }
 
 export function onUnexpectedError(e: any): undefined {
@@ -95,19 +125,29 @@ export interface SerializedError {
 	readonly name: string;
 	readonly message: string;
 	readonly stack: string;
+	readonly noTelemetry: boolean;
+	readonly code?: string;
+	readonly cause?: SerializedError;
 }
+
+type ErrorWithCode = Error & {
+	code: string | undefined;
+};
 
 export function transformErrorForSerialization(error: Error): SerializedError;
 export function transformErrorForSerialization(error: any): any;
 export function transformErrorForSerialization(error: any): any {
 	if (error instanceof Error) {
-		let { name, message } = error;
+		const { name, message, cause } = error;
 		const stack: string = (<any>error).stacktrace || (<any>error).stack;
 		return {
 			$isError: true,
 			name,
 			message,
-			stack
+			stack,
+			noTelemetry: ErrorNoTelemetry.isErrorNoTelemetry(error),
+			cause: cause ? transformErrorForSerialization(cause) : undefined,
+			code: (<ErrorWithCode>error).code
 		};
 	}
 
@@ -115,17 +155,36 @@ export function transformErrorForSerialization(error: any): any {
 	return error;
 }
 
+export function transformErrorFromSerialization(data: SerializedError): Error {
+	let error: Error;
+	if (data.noTelemetry) {
+		error = new ErrorNoTelemetry();
+	} else {
+		error = new Error();
+		error.name = data.name;
+	}
+	error.message = data.message;
+	error.stack = data.stack;
+	if (data.code) {
+		(<ErrorWithCode>error).code = data.code;
+	}
+	if (data.cause) {
+		error.cause = transformErrorFromSerialization(data.cause);
+	}
+	return error;
+}
+
 // see https://github.com/v8/v8/wiki/Stack%20Trace%20API#basic-stack-traces
 export interface V8CallSite {
-	getThis(): any;
-	getTypeName(): string;
-	getFunction(): string;
-	getFunctionName(): string;
-	getMethodName(): string;
-	getFileName(): string;
-	getLineNumber(): number;
-	getColumnNumber(): number;
-	getEvalOrigin(): string;
+	getThis(): unknown;
+	getTypeName(): string | null;
+	getFunction(): Function | undefined;
+	getFunctionName(): string | null;
+	getMethodName(): string | null;
+	getFileName(): string | null;
+	getLineNumber(): number | null;
+	getColumnNumber(): number | null;
+	getEvalOrigin(): string | undefined;
 	isToplevel(): boolean;
 	isEval(): boolean;
 	isNative(): boolean;
@@ -179,16 +238,10 @@ export function illegalState(name?: string): Error {
 	}
 }
 
-export function readonly(name?: string): Error {
-	return name
-		? new Error(`readonly property '${name} cannot be changed'`)
-		: new Error('readonly property cannot be changed');
-}
-
-export function disposed(what: string): Error {
-	const result = new Error(`${what} has been disposed`);
-	result.name = 'DISPOSED';
-	return result;
+export class ReadonlyError extends TypeError {
+	constructor(name?: string) {
+		super(name ? `${name} is read-only and cannot be changed` : 'Cannot change read-only property');
+	}
 }
 
 export function getErrorMessage(err: any): string {
@@ -233,5 +286,41 @@ export class ExpectedError extends Error {
  * Error that when thrown won't be logged in telemetry as an unhandled error.
  */
 export class ErrorNoTelemetry extends Error {
-	readonly logTelemetry = false;
+	override readonly name: string;
+
+	constructor(msg?: string) {
+		super(msg);
+		this.name = 'CodeExpectedError';
+	}
+
+	public static fromError(err: Error): ErrorNoTelemetry {
+		if (err instanceof ErrorNoTelemetry) {
+			return err;
+		}
+
+		const result = new ErrorNoTelemetry();
+		result.message = err.message;
+		result.stack = err.stack;
+		return result;
+	}
+
+	public static isErrorNoTelemetry(err: Error): err is ErrorNoTelemetry {
+		return err.name === 'CodeExpectedError';
+	}
+}
+
+/**
+ * This error indicates a bug.
+ * Do not throw this for invalid user input.
+ * Only catch this error to recover gracefully from bugs.
+ */
+export class BugIndicatingError extends Error {
+	constructor(message?: string) {
+		super(message || 'An unexpected bug occurred.');
+		Object.setPrototypeOf(this, BugIndicatingError.prototype);
+
+		// Because we know for sure only buggy code throws this,
+		// we definitely want to break here and fix the bug.
+		// debugger;
+	}
 }

@@ -3,9 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-namespace snaps {
+export namespace snaps {
 
 	const fs = require('fs');
 	const path = require('path');

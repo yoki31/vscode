@@ -3,10 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-import * as fancyLog from 'fancy-log';
-import * as ansiColors from 'ansi-colors';
+import fancyLog from 'fancy-log';
+import ansiColors from 'ansi-colors';
 
 export interface BaseTask {
 	displayName?: string;

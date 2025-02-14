@@ -3,57 +3,73 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IHistoryNavigationWidget } from 'vs/base/browser/history';
-import { IContextViewProvider } from 'vs/base/browser/ui/contextview/contextview';
-import { FindInput, IFindInputOptions } from 'vs/base/browser/ui/findinput/findInput';
-import { IReplaceInputOptions, ReplaceInput } from 'vs/base/browser/ui/findinput/replaceInput';
-import { HistoryInputBox, IHistoryInputOptions } from 'vs/base/browser/ui/inputbox/inputBox';
-import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
-import { ContextKeyExpr, IContextKey, IContextKeyService, IContextKeyServiceTarget, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
-import { KeybindingsRegistry, KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
-import { localize } from 'vs/nls';
+import { IHistoryNavigationWidget } from '../../../base/browser/history.js';
+import { IContextViewProvider } from '../../../base/browser/ui/contextview/contextview.js';
+import { FindInput, IFindInputOptions } from '../../../base/browser/ui/findinput/findInput.js';
+import { IReplaceInputOptions, ReplaceInput } from '../../../base/browser/ui/findinput/replaceInput.js';
+import { HistoryInputBox, IHistoryInputOptions } from '../../../base/browser/ui/inputbox/inputBox.js';
+import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
+import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../contextkey/common/contextkey.js';
+import { KeybindingsRegistry, KeybindingWeight } from '../../keybinding/common/keybindingsRegistry.js';
+import { localize } from '../../../nls.js';
+import { DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { isActiveElement } from '../../../base/browser/dom.js';
 
 export const historyNavigationVisible = new RawContextKey<boolean>('suggestWidgetVisible', false, localize('suggestWidgetVisible', "Whether suggestion are visible"));
 
-export const HistoryNavigationWidgetContext = 'historyNavigationWidget';
+const HistoryNavigationWidgetFocusContext = 'historyNavigationWidgetFocus';
 const HistoryNavigationForwardsEnablementContext = 'historyNavigationForwardsEnabled';
 const HistoryNavigationBackwardsEnablementContext = 'historyNavigationBackwardsEnabled';
 
-function bindContextScopedWidget(contextKeyService: IContextKeyService, widget: IContextScopedWidget, contextKey: string): void {
-	new RawContextKey<IContextScopedWidget>(contextKey, widget).bindTo(contextKeyService);
-}
-
-function createWidgetScopedContextKeyService(contextKeyService: IContextKeyService, widget: IContextScopedWidget): IContextKeyService {
-	return contextKeyService.createScoped(widget.target);
-}
-
-function getContextScopedWidget<T extends IContextScopedWidget>(contextKeyService: IContextKeyService, contextKey: string): T | undefined {
-	return contextKeyService.getContext(document.activeElement).getValue(contextKey);
-}
-
-interface IContextScopedWidget {
-	readonly target: IContextKeyServiceTarget;
-}
-
-export interface IContextScopedHistoryNavigationWidget extends IContextScopedWidget {
-	historyNavigator: IHistoryNavigationWidget;
-}
-
-export interface IHistoryNavigationContext {
-	scopedContextKeyService: IContextKeyService;
+export interface IHistoryNavigationContext extends IDisposable {
 	historyNavigationForwardsEnablement: IContextKey<boolean>;
 	historyNavigationBackwardsEnablement: IContextKey<boolean>;
 }
 
-export function createAndBindHistoryNavigationWidgetScopedContextKeyService(contextKeyService: IContextKeyService, widget: IContextScopedHistoryNavigationWidget): IHistoryNavigationContext {
-	const scopedContextKeyService = createWidgetScopedContextKeyService(contextKeyService, widget);
-	bindContextScopedWidget(scopedContextKeyService, widget, HistoryNavigationWidgetContext);
+let lastFocusedWidget: IHistoryNavigationWidget | undefined = undefined;
+const widgets: IHistoryNavigationWidget[] = [];
+
+export function registerAndCreateHistoryNavigationContext(scopedContextKeyService: IContextKeyService, widget: IHistoryNavigationWidget): IHistoryNavigationContext {
+	if (widgets.includes(widget)) {
+		throw new Error('Cannot register the same widget multiple times');
+	}
+
+	widgets.push(widget);
+	const disposableStore = new DisposableStore();
+	const historyNavigationWidgetFocus = new RawContextKey<boolean>(HistoryNavigationWidgetFocusContext, false).bindTo(scopedContextKeyService);
 	const historyNavigationForwardsEnablement = new RawContextKey<boolean>(HistoryNavigationForwardsEnablementContext, true).bindTo(scopedContextKeyService);
 	const historyNavigationBackwardsEnablement = new RawContextKey<boolean>(HistoryNavigationBackwardsEnablementContext, true).bindTo(scopedContextKeyService);
+
+	const onDidFocus = () => {
+		historyNavigationWidgetFocus.set(true);
+		lastFocusedWidget = widget;
+	};
+
+	const onDidBlur = () => {
+		historyNavigationWidgetFocus.set(false);
+		if (lastFocusedWidget === widget) {
+			lastFocusedWidget = undefined;
+		}
+	};
+
+	// Check for currently being focused
+	if (isActiveElement(widget.element)) {
+		onDidFocus();
+	}
+
+	disposableStore.add(widget.onDidFocus(() => onDidFocus()));
+	disposableStore.add(widget.onDidBlur(() => onDidBlur()));
+	disposableStore.add(toDisposable(() => {
+		widgets.splice(widgets.indexOf(widget), 1);
+		onDidBlur();
+	}));
+
 	return {
-		scopedContextKeyService,
 		historyNavigationForwardsEnablement,
 		historyNavigationBackwardsEnablement,
+		dispose() {
+			disposableStore.dispose();
+		}
 	};
 }
 
@@ -63,7 +79,8 @@ export class ContextScopedHistoryInputBox extends HistoryInputBox {
 		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super(container, contextViewProvider, options);
-		this._register(createAndBindHistoryNavigationWidgetScopedContextKeyService(contextKeyService, <IContextScopedHistoryNavigationWidget>{ target: this.element, historyNavigator: this }).scopedContextKeyService);
+		const scopedContextKeyService = this._register(contextKeyService.createScoped(this.element));
+		this._register(registerAndCreateHistoryNavigationContext(scopedContextKeyService, this));
 	}
 
 }
@@ -71,10 +88,11 @@ export class ContextScopedHistoryInputBox extends HistoryInputBox {
 export class ContextScopedFindInput extends FindInput {
 
 	constructor(container: HTMLElement | null, contextViewProvider: IContextViewProvider, options: IFindInputOptions,
-		@IContextKeyService contextKeyService: IContextKeyService, showFindOptions: boolean = false
+		@IContextKeyService contextKeyService: IContextKeyService
 	) {
-		super(container, contextViewProvider, showFindOptions, options);
-		this._register(createAndBindHistoryNavigationWidgetScopedContextKeyService(contextKeyService, <IContextScopedHistoryNavigationWidget>{ target: this.inputBox.element, historyNavigator: this.inputBox }).scopedContextKeyService);
+		super(container, contextViewProvider, options);
+		const scopedContextKeyService = this._register(contextKeyService.createScoped(this.inputBox.element));
+		this._register(registerAndCreateHistoryNavigationContext(scopedContextKeyService, this.inputBox));
 	}
 }
 
@@ -84,7 +102,8 @@ export class ContextScopedReplaceInput extends ReplaceInput {
 		@IContextKeyService contextKeyService: IContextKeyService, showReplaceOptions: boolean = false
 	) {
 		super(container, contextViewProvider, showReplaceOptions, options);
-		this._register(createAndBindHistoryNavigationWidgetScopedContextKeyService(contextKeyService, <IContextScopedHistoryNavigationWidget>{ target: this.inputBox.element, historyNavigator: this.inputBox }).scopedContextKeyService);
+		const scopedContextKeyService = this._register(contextKeyService.createScoped(this.inputBox.element));
+		this._register(registerAndCreateHistoryNavigationContext(scopedContextKeyService, this.inputBox));
 	}
 
 }
@@ -93,18 +112,15 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: 'history.showPrevious',
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: ContextKeyExpr.and(
-		ContextKeyExpr.has(HistoryNavigationWidgetContext),
+		ContextKeyExpr.has(HistoryNavigationWidgetFocusContext),
 		ContextKeyExpr.equals(HistoryNavigationBackwardsEnablementContext, true),
+		ContextKeyExpr.not('isComposing'),
 		historyNavigationVisible.isEqualTo(false),
 	),
 	primary: KeyCode.UpArrow,
 	secondary: [KeyMod.Alt | KeyCode.UpArrow],
 	handler: (accessor) => {
-		const widget = getContextScopedWidget<IContextScopedHistoryNavigationWidget>(accessor.get(IContextKeyService), HistoryNavigationWidgetContext);
-		if (widget) {
-			const historyInputBox: IHistoryNavigationWidget = widget.historyNavigator;
-			historyInputBox.showPreviousValue();
-		}
+		lastFocusedWidget?.showPreviousValue();
 	}
 });
 
@@ -112,17 +128,14 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: 'history.showNext',
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: ContextKeyExpr.and(
-		ContextKeyExpr.has(HistoryNavigationWidgetContext),
+		ContextKeyExpr.has(HistoryNavigationWidgetFocusContext),
 		ContextKeyExpr.equals(HistoryNavigationForwardsEnablementContext, true),
+		ContextKeyExpr.not('isComposing'),
 		historyNavigationVisible.isEqualTo(false),
 	),
 	primary: KeyCode.DownArrow,
 	secondary: [KeyMod.Alt | KeyCode.DownArrow],
 	handler: (accessor) => {
-		const widget = getContextScopedWidget<IContextScopedHistoryNavigationWidget>(accessor.get(IContextKeyService), HistoryNavigationWidgetContext);
-		if (widget) {
-			const historyInputBox: IHistoryNavigationWidget = widget.historyNavigator;
-			historyInputBox.showNextValue();
-		}
+		lastFocusedWidget?.showNextValue();
 	}
 });

@@ -7,7 +7,12 @@
 			}
 		},
 		{
-			"scope": ["meta.embedded", "source.groovy.embedded"],
+			"scope": [
+				"meta.embedded",
+				"source.groovy.embedded",
+				"string meta.image.inline.markdown",
+				"variable.legacy.builtin.python"
+			],
 			"settings": {
 				"foreground": "#839496"
 			}
@@ -31,7 +36,7 @@
 			"name": "Regexp",
 			"scope": "string.regexp",
 			"settings": {
-				"foreground": "#D30102"
+				"foreground": "#DC322F"
 			}
 		},
 		{
@@ -100,7 +105,7 @@
 				"punctuation.section.embedded.end"
 			],
 			"settings": {
-				"foreground": "#D30102"
+				"foreground": "#DC322F"
 			}
 		},
 		{
@@ -135,7 +140,10 @@
 		},
 		{
 			"name": "Inherited class",
-			"scope": "entity.other.inherited-class",
+			"scope": [
+				"entity.other.inherited-class",
+				"punctuation.separator.namespace.ruby"
+			],
 			"settings": {
 				"foreground": "#6C71C4"
 			}
@@ -177,12 +185,15 @@
 			"name": "Continuation",
 			"scope": "punctuation.separator.continuation",
 			"settings": {
-				"foreground": "#D30102"
+				"foreground": "#DC322F"
 			}
 		},
 		{
 			"name": "Library constant",
-			"scope": "support.constant",
+			"scope": [
+				"support.constant",
+				"support.variable"
+			],
 			"settings": {}
 		},
 		{
@@ -211,7 +222,7 @@
 			"name": "Invalid",
 			"scope": "invalid",
 			"settings": {
-				"foreground": "#D30102"
+				"foreground": "#DC322F"
 			}
 		},
 		{
@@ -222,7 +233,7 @@
 			],
 			"settings": {
 				"fontStyle": "italic",
-				"foreground": "#E0EDDD"
+				"foreground": "#268BD2"
 			}
 		},
 		{
@@ -230,7 +241,7 @@
 			"scope": "markup.deleted",
 			"settings": {
 				"fontStyle": "",
-				"foreground": "#dc322f"
+				"foreground": "#DC322F"
 			}
 		},
 		{
@@ -238,14 +249,14 @@
 			"scope": "markup.changed",
 			"settings": {
 				"fontStyle": "",
-				"foreground": "#cb4b16"
+				"foreground": "#CB4B16"
 			}
 		},
 		{
 			"name": "diff: inserted",
 			"scope": "markup.inserted",
 			"settings": {
-				"foreground": "#219186"
+				"foreground": "#859900"
 			}
 		},
 		{

@@ -3,31 +3,31 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
-import { Disposable, DisposableStore } from 'vs/base/common/lifecycle';
-import { assertIsDefined } from 'vs/base/common/types';
-import { localize } from 'vs/nls';
-import { Action2, IMenuService, MenuId, registerAction2, IMenu, MenuRegistry, MenuItemAction } from 'vs/platform/actions/common/actions';
-import { ICommandService } from 'vs/platform/commands/common/commands';
-import { IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
-import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
-import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
-import { KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
-import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from 'vs/platform/quickinput/common/quickInput';
-import { Registry } from 'vs/platform/registry/common/platform';
-import { Extensions as WorkbenchExtensions, IWorkbenchContributionsRegistry } from 'vs/workbench/common/contributions';
-import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
+import { promiseWithResolvers } from '../../../../base/common/async.js';
+import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { assertIsDefined } from '../../../../base/common/types.js';
+import { localize, localize2 } from '../../../../nls.js';
+import { ILocalizedString } from '../../../../platform/action/common/action.js';
+import { Action2, IMenuService, MenuId, registerAction2, IMenu, MenuRegistry, MenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../platform/quickinput/common/quickInput.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { Extensions as WorkbenchExtensions, IWorkbenchContributionsRegistry } from '../../../common/contributions.js';
+import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 
-
-const category = localize('Create', "Create");
-
-export const HasMultipleNewFileEntries = new RawContextKey<boolean>('hasMultipleNewFileEntries', false);
+const builtInSource = localize('Built-In', "Built-In");
+const category: ILocalizedString = localize2('Create', 'Create');
 
 registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'welcome.showNewFileEntries',
-			title: { value: localize('welcome.newFile', "New File..."), original: 'New File...' },
+			title: localize2('welcome.newFile', 'New File...'),
 			category,
 			f1: true,
 			keybinding: {
@@ -36,19 +36,18 @@ registerAction2(class extends Action2 {
 			},
 			menu: {
 				id: MenuId.MenubarFileMenu,
-				when: HasMultipleNewFileEntries,
 				group: '1_new',
 				order: 2
 			}
 		});
 	}
 
-	run(accessor: ServicesAccessor) {
-		assertIsDefined(NewFileTemplatesManager.Instance).run();
+	async run(accessor: ServicesAccessor): Promise<boolean> {
+		return assertIsDefined(NewFileTemplatesManager.Instance).run();
 	}
 });
 
-type NewFileItem = { commandID: string; title: string; from: string; group: string };
+type NewFileItem = { commandID: string; title: string; from: string; group: string; commandArgs?: any };
 class NewFileTemplatesManager extends Disposable {
 	static Instance: NewFileTemplatesManager | undefined;
 
@@ -68,8 +67,6 @@ class NewFileTemplatesManager extends Disposable {
 		this._register({ dispose() { if (NewFileTemplatesManager.Instance === this) { NewFileTemplatesManager.Instance = undefined; } } });
 
 		this.menu = menuService.createMenu(MenuId.NewFile, contextKeyService);
-		this.updateContextKeys();
-		this._register(this.menu.onDidChange(() => { this.updateContextKeys(); }));
 	}
 
 	private allEntries(): NewFileItem[] {
@@ -77,43 +74,52 @@ class NewFileTemplatesManager extends Disposable {
 		for (const [groupName, group] of this.menu.getActions({ renderShortTitle: true })) {
 			for (const action of group) {
 				if (action instanceof MenuItemAction) {
-					items.push({ commandID: action.item.id, from: action.item.source ?? localize('Built-In', "Built-In"), title: action.label, group: groupName });
+					items.push({ commandID: action.item.id, from: action.item.source?.title ?? builtInSource, title: action.label, group: groupName });
 				}
 			}
 		}
 		return items;
 	}
 
-	private updateContextKeys() {
-		HasMultipleNewFileEntries.bindTo(this.contextKeyService).set(this.allEntries().length > 1);
-	}
-
-	run() {
+	async run(): Promise<boolean> {
 		const entries = this.allEntries();
 		if (entries.length === 0) {
 			throw Error('Unexpected empty new items list');
 		}
 		else if (entries.length === 1) {
 			this.commandService.executeCommand(entries[0].commandID);
+			return true;
 		}
 		else {
-			this.selectNewEntry(entries);
+			return this.selectNewEntry(entries);
 		}
 	}
 
-	private async selectNewEntry(entries: NewFileItem[]) {
+	private async selectNewEntry(entries: NewFileItem[]): Promise<boolean> {
+		const { promise: resultPromise, resolve: resolveResult } = promiseWithResolvers<boolean>();
+
 		const disposables = new DisposableStore();
-		const qp = this.quickInputService.createQuickPick();
-		qp.title = localize('createNew', "Create New...");
+		const qp = this.quickInputService.createQuickPick({ useSeparators: true });
+		qp.title = localize('newFileTitle', "New File...");
+		qp.placeholder = localize('newFilePlaceholder', "Select File Type or Enter File Name...");
+		qp.sortByLabel = false;
 		qp.matchOnDetail = true;
 		qp.matchOnDescription = true;
 
-		const sortCategories = (a: string, b: string): number => {
+		const sortCategories = (a: NewFileItem, b: NewFileItem): number => {
 			const categoryPriority: Record<string, number> = { 'file': 1, 'notebook': 2 };
-			if (categoryPriority[a] && categoryPriority[b]) { return categoryPriority[b] - categoryPriority[a]; }
-			if (categoryPriority[a]) { return 1; }
-			if (categoryPriority[b]) { return -1; }
-			return a.localeCompare(b);
+			if (categoryPriority[a.group] && categoryPriority[b.group]) {
+				if (categoryPriority[a.group] !== categoryPriority[b.group]) {
+					return categoryPriority[b.group] - categoryPriority[a.group];
+				}
+			}
+			else if (categoryPriority[a.group]) { return 1; }
+			else if (categoryPriority[b.group]) { return -1; }
+
+			if (a.from === builtInSource) { return 1; }
+			if (b.from === builtInSource) { return -1; }
+
+			return a.from.localeCompare(b.from);
 		};
 
 		const displayCategory: Record<string, string> = {
@@ -125,7 +131,7 @@ class NewFileTemplatesManager extends Disposable {
 			const items: (((IQuickPickItem & NewFileItem) | IQuickPickSeparator))[] = [];
 			let lastSeparator: string | undefined;
 			entries
-				.sort((a, b) => -sortCategories(a.group, b.group))
+				.sort((a, b) => -sortCategories(a, b))
 				.forEach((entry) => {
 					const command = entry.commandID;
 					const keybinding = this.keybindingService.lookupKeybinding(command || '', this.contextKeyService);
@@ -157,32 +163,52 @@ class NewFileTemplatesManager extends Disposable {
 
 		disposables.add(this.menu.onDidChange(() => refreshQp(this.allEntries())));
 
+		disposables.add(qp.onDidChangeValue((val: string) => {
+			if (val === '') {
+				refreshQp(entries);
+				return;
+			}
+			const currentTextEntry: NewFileItem = {
+				commandID: 'workbench.action.files.newFile',
+				commandArgs: { languageId: undefined, viewType: undefined, fileName: val },
+				title: localize('miNewFileWithName', "Create New File ({0})", val),
+				group: 'file',
+				from: builtInSource,
+			};
+			refreshQp([currentTextEntry, ...entries]);
+		}));
+
 		disposables.add(qp.onDidAccept(async e => {
 			const selected = qp.selectedItems[0] as (IQuickPickItem & NewFileItem);
+			resolveResult(!!selected);
+
 			qp.hide();
-			if (selected) { await this.commandService.executeCommand(selected.commandID); }
+			if (selected) { await this.commandService.executeCommand(selected.commandID, selected.commandArgs); }
 		}));
 
 		disposables.add(qp.onDidHide(() => {
 			qp.dispose();
 			disposables.dispose();
+			resolveResult(false);
 		}));
 
 		disposables.add(qp.onDidTriggerItemButton(e => {
 			qp.hide();
-			this.commandService.executeCommand('workbench.action.openGlobalKeybindings', (e.item as any).action.runCommand);
+			this.commandService.executeCommand('workbench.action.openGlobalKeybindings', (e.item as (IQuickPickItem & NewFileItem)).commandID);
+			resolveResult(false);
 		}));
 
 		qp.show();
-	}
 
+		return resultPromise;
+	}
 }
 
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
 	.registerWorkbenchContribution(NewFileTemplatesManager, LifecyclePhase.Restored);
 
 MenuRegistry.appendMenuItem(MenuId.NewFile, {
-	group: 'File',
+	group: 'file',
 	command: {
 		id: 'workbench.action.files.newUntitledFile',
 		title: localize('miNewFile2', "Text File")

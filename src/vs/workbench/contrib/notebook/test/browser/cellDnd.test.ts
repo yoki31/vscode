@@ -3,11 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { performCellDropEdits } from 'vs/workbench/contrib/notebook/browser/view/cellParts/cellDnd';
-import { CellKind } from 'vs/workbench/contrib/notebook/common/notebookCommon';
-import { withTestNotebook } from 'vs/workbench/contrib/notebook/test/browser/testNotebookEditor';
-import * as assert from 'assert';
-import { ICellRange } from 'vs/workbench/contrib/notebook/common/notebookRange';
+import { performCellDropEdits } from '../../browser/view/cellParts/cellDnd.js';
+import { CellKind } from '../../common/notebookCommon.js';
+import { withTestNotebook } from './testNotebookEditor.js';
+import assert from 'assert';
+import { ICellRange } from '../../common/notebookRange.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 
 interface IBeginningState {
 	startOrder: string[];
@@ -35,7 +36,7 @@ async function testCellDnd(beginning: IBeginningState, dragAction: IDragAction, 
 			editor.setFocus({ start: beginning.focus, end: beginning.focus + 1 });
 			performCellDropEdits(editor, viewModel.cellAt(dragAction.dragIdx)!, dragAction.direction, viewModel.cellAt(dragAction.dragOverIdx)!);
 
-			for (let i in end.endOrder) {
+			for (const i in end.endOrder) {
 				assert.equal(viewModel.viewCells[i].getText(), end.endOrder[i]);
 			}
 
@@ -46,6 +47,8 @@ async function testCellDnd(beginning: IBeginningState, dragAction: IDragAction, 
 }
 
 suite('cellDND', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	test('drag 1 cell', async () => {
 		await testCellDnd(
 			{
@@ -202,6 +205,26 @@ suite('cellDND', () => {
 				endOrder: ['0', '1', '3', '2'],
 				selection: { start: 0, end: 3 },
 				focus: 0
+			}
+		);
+	});
+
+	test('dragged cell is not focused or selected', async () => {
+		await testCellDnd(
+			{
+				startOrder: ['0', '1', '2', '3'],
+				selections: [{ start: 1, end: 2 }],
+				focus: 1
+			},
+			{
+				dragIdx: 2,
+				dragOverIdx: 3,
+				direction: 'below'
+			},
+			{
+				endOrder: ['0', '1', '3', '2'],
+				selection: { start: 3, end: 4 },
+				focus: 3
 			}
 		);
 	});

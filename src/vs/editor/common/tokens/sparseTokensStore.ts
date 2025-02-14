@@ -3,11 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as arrays from 'vs/base/common/arrays';
-import { IRange, Range } from 'vs/editor/common/core/range';
-import { LineTokens } from 'vs/editor/common/tokens/lineTokens';
-import { SparseMultilineTokens } from 'vs/editor/common/tokens/sparseMultilineTokens';
-import { ILanguageIdCodec, MetadataConsts } from 'vs/editor/common/languages';
+import * as arrays from '../../../base/common/arrays.js';
+import { IRange, Range } from '../core/range.js';
+import { LineTokens } from './lineTokens.js';
+import { SparseMultilineTokens } from './sparseMultilineTokens.js';
+import { ILanguageIdCodec } from '../languages.js';
+import { MetadataConsts } from '../encodedTokenAttributes.js';
 
 /**
  * Represents sparse tokens in a text model.
@@ -123,6 +124,11 @@ export class SparseTokensStore {
 	}
 
 	public addSparseTokens(lineNumber: number, aTokens: LineTokens): LineTokens {
+		if (aTokens.getLineContent().length === 0) {
+			// Don't do anything for empty lines
+			return aTokens;
+		}
+
 		const pieces = this._pieces;
 
 		if (pieces.length === 0) {

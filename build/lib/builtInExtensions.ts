@@ -3,25 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import * as rimraf from 'rimraf';
-import * as es from 'event-stream';
-import * as rename from 'gulp-rename';
-import * as vfs from 'vinyl-fs';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import rimraf from 'rimraf';
+import es from 'event-stream';
+import rename from 'gulp-rename';
+import vfs from 'vinyl-fs';
 import * as ext from './extensions';
-import * as fancyLog from 'fancy-log';
-import * as ansiColors from 'ansi-colors';
+import fancyLog from 'fancy-log';
+import ansiColors from 'ansi-colors';
 import { Stream } from 'stream';
-
-const mkdirp = require('mkdirp');
 
 export interface IExtensionDefinition {
 	name: string;
 	version: string;
+	sha256: string;
 	repo: string;
 	platforms?: string[];
+	vsix?: string;
 	metadata: {
 		id: string;
 		publisherId: {
@@ -68,18 +68,44 @@ function isUpToDate(extension: IExtensionDefinition): boolean {
 	}
 }
 
-function syncMarketplaceExtension(extension: IExtensionDefinition): Stream {
+function getExtensionDownloadStream(extension: IExtensionDefinition) {
+	let input: Stream;
+
+	if (extension.vsix) {
+		input = ext.fromVsix(path.join(root, extension.vsix), extension);
+	} else if (productjson.extensionsGallery?.serviceUrl) {
+		input = ext.fromMarketplace(productjson.extensionsGallery.serviceUrl, extension);
+	} else {
+		input = ext.fromGithub(extension);
+	}
+
+	return input.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`));
+}
+
+export function getExtensionStream(extension: IExtensionDefinition) {
+	// if the extension exists on disk, use those files instead of downloading anew
 	if (isUpToDate(extension)) {
-		log(ansiColors.blue('[marketplace]'), `${extension.name}@${extension.version}`, ansiColors.green('✔︎'));
+		log('[extensions]', `${extension.name}@${extension.version} up to date`, ansiColors.green('✔︎'));
+		return vfs.src(['**'], { cwd: getExtensionPath(extension), dot: true })
+			.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`));
+	}
+
+	return getExtensionDownloadStream(extension);
+}
+
+function syncMarketplaceExtension(extension: IExtensionDefinition): Stream {
+	const galleryServiceUrl = productjson.extensionsGallery?.serviceUrl;
+	const source = ansiColors.blue(galleryServiceUrl ? '[marketplace]' : '[github]');
+	if (isUpToDate(extension)) {
+		log(source, `${extension.name}@${extension.version}`, ansiColors.green('✔︎'));
 		return es.readArray([]);
 	}
 
 	rimraf.sync(getExtensionPath(extension));
 
-	return ext.fromMarketplace(extension.name, extension.version, extension.metadata)
-		.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`))
+	return getExtensionDownloadStream(extension)
 		.pipe(vfs.dest('.build/builtInExtensions'))
-		.on('end', () => log(ansiColors.blue('[marketplace]'), extension.name, ansiColors.green('✔︎')));
+		.on('end', () => log(source, extension.name, ansiColors.green('✔︎')));
 }
 
 function syncExtension(extension: IExtensionDefinition, controlState: 'disabled' | 'marketplace'): Stream {
@@ -128,19 +154,19 @@ function readControlFile(): IControlFile {
 }
 
 function writeControlFile(control: IControlFile): void {
-	mkdirp.sync(path.dirname(controlFilePath));
+	fs.mkdirSync(path.dirname(controlFilePath), { recursive: true });
 	fs.writeFileSync(controlFilePath, JSON.stringify(control, null, 2));
 }
 
 export function getBuiltInExtensions(): Promise<void> {
-	log('Syncronizing built-in extensions...');
+	log('Synchronizing built-in extensions...');
 	log(`You can manage built-in extensions with the ${ansiColors.cyan('--builtin')} flag`);
 
 	const control = readControlFile();
 	const streams: Stream[] = [];
 
 	for (const extension of [...builtInExtensions, ...webBuiltInExtensions]) {
-		let controlState = control[extension.name] || 'marketplace';
+		const controlState = control[extension.name] || 'marketplace';
 		control[extension.name] = controlState;
 
 		streams.push(syncExtension(extension, controlState));

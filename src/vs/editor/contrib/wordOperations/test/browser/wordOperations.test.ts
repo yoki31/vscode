@@ -3,21 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as assert from 'assert';
-import { CoreEditingCommands } from 'vs/editor/browser/coreCommands';
-import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
-import { EditorCommand } from 'vs/editor/browser/editorExtensions';
-import { Position } from 'vs/editor/common/core/position';
-import { Selection } from 'vs/editor/common/core/selection';
-import { ILanguageConfigurationService, LanguageConfigurationRegistry } from 'vs/editor/common/languages/languageConfigurationRegistry';
-import { ViewModel } from 'vs/editor/common/viewModel/viewModelImpl';
-import { deserializePipePositions, serializePipePositions, testRepeatedActionAndExtractPositions } from 'vs/editor/contrib/wordOperations/test/browser/wordTestUtils';
-import { CursorWordAccessibilityLeft, CursorWordAccessibilityLeftSelect, CursorWordAccessibilityRight, CursorWordAccessibilityRightSelect, CursorWordEndLeft, CursorWordEndLeftSelect, CursorWordEndRight, CursorWordEndRightSelect, CursorWordLeft, CursorWordLeftSelect, CursorWordRight, CursorWordRightSelect, CursorWordStartLeft, CursorWordStartLeftSelect, CursorWordStartRight, CursorWordStartRightSelect, DeleteInsideWord, DeleteWordEndLeft, DeleteWordEndRight, DeleteWordLeft, DeleteWordRight, DeleteWordStartLeft, DeleteWordStartRight } from 'vs/editor/contrib/wordOperations/browser/wordOperations';
-import { StaticServiceAccessor } from 'vs/editor/contrib/wordPartOperations/test/browser/utils';
-import { withTestCodeEditor } from 'vs/editor/test/browser/testCodeEditor';
-import { createTextModel } from 'vs/editor/test/common/testTextModel';
-import { MockMode } from 'vs/editor/test/common/mocks/mockMode';
-import { TestLanguageConfigurationService } from 'vs/editor/test/common/modes/testLanguageConfigurationService';
+import assert from 'assert';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { isFirefox } from '../../../../../base/common/platform.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { CoreEditingCommands } from '../../../../browser/coreCommands.js';
+import { ICodeEditor } from '../../../../browser/editorBrowser.js';
+import { EditorCommand } from '../../../../browser/editorExtensions.js';
+import { Position } from '../../../../common/core/position.js';
+import { Selection } from '../../../../common/core/selection.js';
+import { ILanguageService } from '../../../../common/languages/language.js';
+import { ILanguageConfigurationService } from '../../../../common/languages/languageConfigurationRegistry.js';
+import { ViewModel } from '../../../../common/viewModel/viewModelImpl.js';
+import { CursorWordAccessibilityLeft, CursorWordAccessibilityLeftSelect, CursorWordAccessibilityRight, CursorWordAccessibilityRightSelect, CursorWordEndLeft, CursorWordEndLeftSelect, CursorWordEndRight, CursorWordEndRightSelect, CursorWordLeft, CursorWordLeftSelect, CursorWordRight, CursorWordRightSelect, CursorWordStartLeft, CursorWordStartLeftSelect, CursorWordStartRight, CursorWordStartRightSelect, DeleteInsideWord, DeleteWordEndLeft, DeleteWordEndRight, DeleteWordLeft, DeleteWordRight, DeleteWordStartLeft, DeleteWordStartRight } from '../../browser/wordOperations.js';
+import { deserializePipePositions, serializePipePositions, testRepeatedActionAndExtractPositions } from './wordTestUtils.js';
+import { createCodeEditorServices, instantiateTestCodeEditor, withTestCodeEditor } from '../../../../test/browser/testCodeEditor.js';
+import { instantiateTextModel } from '../../../../test/common/testTextModel.js';
+import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 
 suite('WordOperations', () => {
 
@@ -45,13 +47,28 @@ suite('WordOperations', () => {
 	const _deleteWordEndRight = new DeleteWordEndRight();
 	const _deleteInsideWord = new DeleteInsideWord();
 
-	const serviceAccessor = new StaticServiceAccessor().withService(
-		ILanguageConfigurationService,
-		new TestLanguageConfigurationService()
-	);
+	let disposables: DisposableStore;
+	let instantiationService: TestInstantiationService;
+	let languageConfigurationService: ILanguageConfigurationService;
+	let languageService: ILanguageService;
+
+	setup(() => {
+		disposables = new DisposableStore();
+		instantiationService = createCodeEditorServices(disposables);
+		languageConfigurationService = instantiationService.get(ILanguageConfigurationService);
+		languageService = instantiationService.get(ILanguageService);
+	});
+
+	teardown(() => {
+		disposables.dispose();
+	});
+
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	function runEditorCommand(editor: ICodeEditor, command: EditorCommand): void {
-		command.runEditorCommand(serviceAccessor, editor, null);
+		instantiationService.invokeFunction((accessor) => {
+			command.runEditorCommand(accessor, editor, null);
+		});
 	}
 	function cursorWordLeft(editor: ICodeEditor, inSelectionMode: boolean = false): void {
 		runEditorCommand(editor, inSelectionMode ? _cursorWordLeftSelect : _cursorWordLeft);
@@ -161,6 +178,82 @@ suite('WordOperations', () => {
 		);
 		const actual = serializePipePositions(text, actualStops);
 		assert.deepStrictEqual(actual, EXPECTED);
+	});
+
+	test('cursorWordLeft - Recognize words', function () {
+		if (isFirefox) {
+			// https://github.com/microsoft/vscode/issues/219843
+			return this.skip();
+		}
+		const EXPECTED = [
+			'|/* |これ|は|テスト|です |/*',
+		].join('\n');
+		const [text,] = deserializePipePositions(EXPECTED);
+		const actualStops = testRepeatedActionAndExtractPositions(
+			text,
+			new Position(1000, 1000),
+			ed => cursorWordLeft(ed, true),
+			ed => ed.getPosition()!,
+			ed => ed.getPosition()!.equals(new Position(1, 1)),
+			{
+				wordSegmenterLocales: 'ja'
+			}
+		);
+		const actual = serializePipePositions(text, actualStops);
+		assert.deepStrictEqual(actual, EXPECTED);
+	});
+
+	test('cursorWordLeft - Does not recognize words', () => {
+		const EXPECTED = [
+			'|/* |これはテストです |/*',
+		].join('\n');
+		const [text,] = deserializePipePositions(EXPECTED);
+		const actualStops = testRepeatedActionAndExtractPositions(
+			text,
+			new Position(1000, 1000),
+			ed => cursorWordLeft(ed, true),
+			ed => ed.getPosition()!,
+			ed => ed.getPosition()!.equals(new Position(1, 1)),
+			{
+				wordSegmenterLocales: ''
+			}
+		);
+		const actual = serializePipePositions(text, actualStops);
+		assert.deepStrictEqual(actual, EXPECTED);
+	});
+
+	test('cursorWordLeft - issue #169904: cursors out of sync', () => {
+		const text = [
+			'.grid1 {',
+			'  display: grid;',
+			'  grid-template-columns:',
+			'    [full-start] minmax(1em, 1fr)',
+			'    [main-start] minmax(0, 40em) [main-end]',
+			'    minmax(1em, 1fr) [full-end];',
+			'}',
+			'.grid2 {',
+			'  display: grid;',
+			'  grid-template-columns:',
+			'    [full-start] minmax(1em, 1fr)',
+			'    [main-start] minmax(0, 40em) [main-end] minmax(1em, 1fr) [full-end];',
+			'}',
+		];
+		withTestCodeEditor(text, {}, (editor) => {
+			editor.setSelections([
+				new Selection(5, 44, 5, 44),
+				new Selection(6, 32, 6, 32),
+				new Selection(12, 44, 12, 44),
+				new Selection(12, 72, 12, 72),
+			]);
+			cursorWordLeft(editor, false);
+			assert.deepStrictEqual(editor.getSelections(), [
+				new Selection(5, 43, 5, 43),
+				new Selection(6, 31, 6, 31),
+				new Selection(12, 43, 12, 43),
+				new Selection(12, 71, 12, 71),
+			]);
+
+		});
 	});
 
 	test('cursorWordLeftSelect - issue #74369: cursorWordLeft and cursorWordLeftSelect do not behave consistently', () => {
@@ -306,6 +399,48 @@ suite('WordOperations', () => {
 			ed => cursorWordRight(ed),
 			ed => ed.getPosition()!,
 			ed => ed.getPosition()!.equals(new Position(1, 17))
+		);
+		const actual = serializePipePositions(text, actualStops);
+		assert.deepStrictEqual(actual, EXPECTED);
+	});
+
+	test('cursorWordRight - Recognize words', function () {
+		if (isFirefox) {
+			// https://github.com/microsoft/vscode/issues/219843
+			return this.skip();
+		}
+		const EXPECTED = [
+			'/*| これ|は|テスト|です|/*|',
+		].join('\n');
+		const [text,] = deserializePipePositions(EXPECTED);
+		const actualStops = testRepeatedActionAndExtractPositions(
+			text,
+			new Position(1, 1),
+			ed => cursorWordRight(ed),
+			ed => ed.getPosition()!,
+			ed => ed.getPosition()!.equals(new Position(1, 14)),
+			{
+				wordSegmenterLocales: 'ja'
+			}
+		);
+		const actual = serializePipePositions(text, actualStops);
+		assert.deepStrictEqual(actual, EXPECTED);
+	});
+
+	test('cursorWordRight - Does not recognize words', () => {
+		const EXPECTED = [
+			'/*| これはテストです|/*|',
+		].join('\n');
+		const [text,] = deserializePipePositions(EXPECTED);
+		const actualStops = testRepeatedActionAndExtractPositions(
+			text,
+			new Position(1, 1),
+			ed => cursorWordRight(ed),
+			ed => ed.getPosition()!,
+			ed => ed.getPosition()!.equals(new Position(1, 14)),
+			{
+				wordSegmenterLocales: ''
+			}
 		);
 		const actual = serializePipePositions(text, actualStops);
 		assert.deepStrictEqual(actual, EXPECTED);
@@ -738,27 +873,20 @@ suite('WordOperations', () => {
 
 	test('deleteWordLeft - issue #91855: Matching (quote, bracket, paren) doesn\'t get deleted when hitting Ctrl+Backspace', () => {
 		const languageId = 'myTestMode';
-		class TestMode extends MockMode {
-			constructor() {
-				super(languageId);
-				this._register(LanguageConfigurationRegistry.register(this.languageId, {
-					autoClosingPairs: [
-						{ open: '\"', close: '\"' }
-					]
-				}));
-			}
-		}
 
-		const mode = new TestMode();
-		const model = createTextModel('a ""', languageId, undefined);
+		disposables.add(languageService.registerLanguage({ id: languageId }));
+		disposables.add(languageConfigurationService.register(languageId, {
+			autoClosingPairs: [
+				{ open: '\"', close: '\"' }
+			]
+		}));
 
-		withTestCodeEditor(model, { autoClosingDelete: 'always' }, (editor, _) => {
-			editor.setPosition(new Position(1, 4));
-			deleteWordLeft(editor); assert.strictEqual(model.getLineContent(1), 'a ');
-		});
+		const model = disposables.add(instantiateTextModel(instantiationService, 'a ""', languageId));
+		const editor = disposables.add(instantiateTestCodeEditor(instantiationService, model, { autoClosingDelete: 'always' }));
 
-		model.dispose();
-		mode.dispose();
+		editor.setPosition(new Position(1, 4));
+		deleteWordLeft(editor);
+		assert.strictEqual(model.getLineContent(1), 'a ');
 	});
 
 	test('deleteInsideWord - empty line', () => {

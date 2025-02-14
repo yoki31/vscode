@@ -4,20 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 
-import { WorkspaceFileEditOptions } from 'vs/editor/common/languages';
-import { IFileService, FileSystemProviderCapabilities, IFileContent, IFileStatWithMetadata } from 'vs/platform/files/common/files';
-import { IProgress } from 'vs/platform/progress/common/progress';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IWorkingCopyFileService, IFileOperationUndoRedoInfo, IMoveOperation, ICopyOperation, IDeleteOperation, ICreateOperation, ICreateFileOperation } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
-import { IWorkspaceUndoRedoElement, UndoRedoElementType, IUndoRedoService, UndoRedoGroup, UndoRedoSource } from 'vs/platform/undoRedo/common/undoRedo';
-import { URI } from 'vs/base/common/uri';
-import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { ILogService } from 'vs/platform/log/common/log';
-import { VSBuffer } from 'vs/base/common/buffer';
-import { ResourceFileEdit } from 'vs/editor/browser/services/bulkEditService';
-import { CancellationToken } from 'vs/base/common/cancellation';
-import { flatten, tail } from 'vs/base/common/arrays';
-import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { WorkspaceFileEditOptions } from '../../../../editor/common/languages.js';
+import { IFileService, FileSystemProviderCapabilities, IFileContent, IFileStatWithMetadata } from '../../../../platform/files/common/files.js';
+import { IProgress } from '../../../../platform/progress/common/progress.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IWorkingCopyFileService, IFileOperationUndoRedoInfo, IMoveOperation, ICopyOperation, IDeleteOperation, ICreateOperation, ICreateFileOperation } from '../../../services/workingCopy/common/workingCopyFileService.js';
+import { IWorkspaceUndoRedoElement, UndoRedoElementType, IUndoRedoService, UndoRedoGroup, UndoRedoSource } from '../../../../platform/undoRedo/common/undoRedo.js';
+import { URI } from '../../../../base/common/uri.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
+import { ResourceFileEdit } from '../../../../editor/browser/services/bulkEditService.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
+import { Schemas } from '../../../../base/common/network.js';
 
 interface IFileOperation {
 	uris: URI[];
@@ -51,7 +51,7 @@ class RenameOperation implements IFileOperation {
 	) { }
 
 	get uris() {
-		return flatten(this._edits.map(edit => [edit.newUri, edit.oldUri]));
+		return this._edits.flatMap(edit => [edit.newUri, edit.oldUri]);
 	}
 
 	async perform(token: CancellationToken): Promise<IFileOperation> {
@@ -105,7 +105,7 @@ class CopyOperation implements IFileOperation {
 	) { }
 
 	get uris() {
-		return flatten(this._edits.map(edit => [edit.newUri, edit.oldUri]));
+		return this._edits.flatMap(edit => [edit.newUri, edit.oldUri]);
 	}
 
 	async perform(token: CancellationToken): Promise<IFileOperation> {
@@ -173,6 +173,9 @@ class CreateOperation implements IFileOperation {
 		const undoes: DeleteEdit[] = [];
 
 		for (const edit of this._edits) {
+			if (edit.newUri.scheme === Schemas.untitled) {
+				continue; // ignore, will be handled by a later edit
+			}
 			if (edit.options.overwrite === undefined && edit.options.ignoreIfExists && await this._fileService.exists(edit.newUri)) {
 				continue; // not overwriting, but ignoring, and the target file exists
 			}
@@ -252,15 +255,19 @@ class DeleteOperation implements IFileOperation {
 
 			// read file contents for undo operation. when a file is too large it won't be restored
 			let fileContent: IFileContent | undefined;
-			if (!edit.undoesCreate && !edit.options.folder && !(typeof edit.options.maxSize === 'number' && fileStat.size > edit.options.maxSize)) {
-				try {
-					fileContent = await this._fileService.readFile(edit.oldUri);
-				} catch (err) {
-					this._logService.critical(err);
+			let fileContentExceedsMaxSize = false;
+			if (!edit.undoesCreate && !edit.options.folder) {
+				fileContentExceedsMaxSize = typeof edit.options.maxSize === 'number' && fileStat.size > edit.options.maxSize;
+				if (!fileContentExceedsMaxSize) {
+					try {
+						fileContent = await this._fileService.readFile(edit.oldUri);
+					} catch (err) {
+						this._logService.error(err);
+					}
 				}
 			}
-			if (fileContent !== undefined) {
-				undoes.push(new CreateEdit(edit.oldUri, edit.options, fileContent.value));
+			if (!fileContentExceedsMaxSize) {
+				undoes.push(new CreateEdit(edit.oldUri, edit.options, fileContent?.value));
 			}
 		}
 
@@ -293,7 +300,7 @@ class FileUndoRedoElement implements IWorkspaceUndoRedoElement {
 		readonly operations: IFileOperation[],
 		readonly confirmBeforeUndo: boolean
 	) {
-		this.resources = (<URI[]>[]).concat(...operations.map(op => op.uris));
+		this.resources = operations.flatMap(op => op.uris);
 	}
 
 	async undo(): Promise<void> {
@@ -332,7 +339,7 @@ export class BulkFileEdits {
 		@IUndoRedoService private readonly _undoRedoService: IUndoRedoService,
 	) { }
 
-	async apply(): Promise<void> {
+	async apply(): Promise<readonly URI[]> {
 		const undoOperations: IFileOperation[] = [];
 		const undoRedoInfo = { undoRedoGroupId: this._undoRedoGroup.id };
 
@@ -345,12 +352,12 @@ export class BulkFileEdits {
 			} else if (!edit.newResource && edit.oldResource) {
 				edits.push(new DeleteEdit(edit.oldResource, edit.options ?? {}, false));
 			} else if (edit.newResource && !edit.oldResource) {
-				edits.push(new CreateEdit(edit.newResource, edit.options ?? {}, undefined));
+				edits.push(new CreateEdit(edit.newResource, edit.options ?? {}, await edit.options.contents));
 			}
 		}
 
 		if (edits.length === 0) {
-			return;
+			return [];
 		}
 
 		const groups: Array<RenameEdit | CopyEdit | DeleteEdit | CreateEdit>[] = [];
@@ -358,15 +365,15 @@ export class BulkFileEdits {
 
 		for (let i = 1; i < edits.length; i++) {
 			const edit = edits[i];
-			const lastGroup = tail(groups);
-			if (lastGroup[0].type === edit.type) {
+			const lastGroup = groups.at(-1);
+			if (lastGroup?.[0].type === edit.type) {
 				lastGroup.push(edit);
 			} else {
 				groups.push([edit]);
 			}
 		}
 
-		for (let group of groups) {
+		for (const group of groups) {
 
 			if (this._token.isCancellationRequested) {
 				break;
@@ -395,6 +402,8 @@ export class BulkFileEdits {
 			this._progress.report(undefined);
 		}
 
-		this._undoRedoService.pushElement(new FileUndoRedoElement(this._label, this._code, undoOperations, this._confirmBeforeUndo), this._undoRedoGroup, this._undoRedoSource);
+		const undoRedoElement = new FileUndoRedoElement(this._label, this._code, undoOperations, this._confirmBeforeUndo);
+		this._undoRedoService.pushElement(undoRedoElement, this._undoRedoGroup, this._undoRedoSource);
+		return undoRedoElement.resources;
 	}
 }

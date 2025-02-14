@@ -3,16 +3,16 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken, CancellationTokenSource } from 'vs/base/common/cancellation';
-import { Event } from 'vs/base/common/event';
-import { IDisposable } from 'vs/base/common/lifecycle';
-import { URI } from 'vs/base/common/uri';
-import { Command } from 'vs/editor/common/languages';
-import { ExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { IAccessibilityInformation } from 'vs/platform/accessibility/common/accessibility';
-import { ThemeIcon } from 'vs/platform/theme/common/themeService';
-import { IMarkdownString } from 'vs/base/common/htmlContent';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { Event } from '../../../../base/common/event.js';
+import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
+import { Command } from '../../../../editor/common/languages.js';
+import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { IAccessibilityInformation } from '../../../../platform/accessibility/common/accessibility.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { IMarkdownString } from '../../../../base/common/htmlContent.js';
 
 export function toKey(extension: ExtensionIdentifier | string, source: string) {
 	return `${typeof extension === 'string' ? extension : ExtensionIdentifier.toKey(extension)}|${source}`;
@@ -51,6 +51,7 @@ export interface TimelineItem {
 	contextValue?: string;
 
 	relativeTime?: string;
+	relativeTimeFullWord?: string;
 	hideRelativeTime?: boolean;
 }
 
@@ -76,11 +77,8 @@ export interface TimelineChangeEvent {
 export interface TimelineOptions {
 	cursor?: string;
 	limit?: number | { timestamp: number; id?: string };
-}
-
-export interface InternalTimelineOptions {
-	cacheResults: boolean;
-	resetCache: boolean;
+	resetCache?: boolean;
+	cacheResults?: boolean;
 }
 
 export interface Timeline {
@@ -100,7 +98,7 @@ export interface Timeline {
 export interface TimelineProvider extends TimelineProviderDescriptor, IDisposable {
 	onDidChange?: Event<TimelineChangeEvent>;
 
-	provideTimeline(uri: URI, options: TimelineOptions, token: CancellationToken, internalOptions?: InternalTimelineOptions): Promise<Timeline | undefined>;
+	provideTimeline(uri: URI, options: TimelineOptions, token: CancellationToken): Promise<Timeline | undefined>;
 }
 
 export interface TimelineSource {
@@ -151,7 +149,7 @@ export interface ITimelineService {
 
 	getSources(): TimelineSource[];
 
-	getTimeline(id: string, uri: URI, options: TimelineOptions, tokenSource: CancellationTokenSource, internalOptions?: InternalTimelineOptions): TimelineRequest | undefined;
+	getTimeline(id: string, uri: URI, options: TimelineOptions, tokenSource: CancellationTokenSource): TimelineRequest | undefined;
 
 	setUri(uri: URI): void;
 }
